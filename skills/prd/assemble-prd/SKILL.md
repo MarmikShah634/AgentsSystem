@@ -3,31 +3,115 @@ id: assemble-prd
 category: prd
 owner_agent: prd-author
 inputs:
-  - sections
-  - slug
+  - sections: "map of section_name -> markdown content for each of the 9 required PRD sections"
+  - slug: "kebab-case identifier used as the filename stem under docs/prd/<slug>.md"
 outputs:
-  - prd_path
+  - prd_path: "absolute path to the written PRD file"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: assemble-prd
 
-## Task
+## Purpose
+Stitch the nine section drafts into a single Markdown file at `docs/prd/<slug>.md` in the fixed canonical order. This is the final author step before the prd-reviewer pipeline runs.
 
-Stitch the section drafts into `docs/prd/<slug>.md` in this fixed order:
+## When to invoke
+Invoke once per PRD, after all nine section drafts exist (eight authored + Open Questions, which may be carried through from upstream skills' open_questions lists).
 
-1. Executive Summary
-2. Problem Statement
-3. Goals & Non-Goals
-4. User Personas
-5. Functional Requirements
-6. Non-Functional Requirements
-7. Success Metrics
-8. Out of Scope
-9. Open Questions
+Do NOT invoke to: edit a section's content (run the section's authoring skill), review the assembled PRD (use the check-prd-* skills), or score readiness (use score-prd-readiness).
+
+## Procedure (follow exactly)
+1. Validate `sections` contains all nine keys (case-sensitive):
+   `Executive Summary`, `Problem Statement`, `Goals & Non-Goals`, `User Personas`, `Functional Requirements`, `Non-Functional Requirements`, `Success Metrics`, `Out of Scope`, `Open Questions`.
+   Missing keys -> STOP and route back to the missing section's author.
+2. Validate `slug` matches `^[a-z0-9]+(-[a-z0-9]+)*$`. If not, STOP and ask human.
+3. Compose the file in this fixed order (no reordering):
+   1. Title `# PRD: <slug>` (human readable form: replace dashes with spaces, title-case).
+   2. `## Executive Summary`
+   3. `## Problem Statement`
+   4. `## Goals & Non-Goals`
+   5. `## User Personas`
+   6. `## Functional Requirements`
+   7. `## Non-Functional Requirements`
+   8. `## Success Metrics`
+   9. `## Out of Scope`
+   10. `## Open Questions`
+4. Each section's body is the markdown from `sections[<name>]`, stripped of its own top-level `##` header if duplicated (avoid double headers).
+5. Write to `docs/prd/<slug>.md`. If the file exists, overwrite only after confirming the human has approved replacement; otherwise write to `docs/prd/<slug>.draft.md` and surface.
+6. Scan the final file for unresolved placeholders: `<TBD`, `<...>`, `TODO`. If any remain, lower confidence and list them in `open_questions`.
+7. Return the absolute path.
+
+## How to think
+- Section header already in body -> strip once; do not double-stack.
+- Section content empty -> do not write blank section; STOP and route back.
+- Slug missing -> derive from Executive Summary's product name only if obvious; otherwise ask human.
+- Don't reorder. Order is a contract every downstream reviewer depends on.
+
+## Required inputs
+`sections` map with all nine keys, each non-empty. `slug` matching the regex. If either invalid, STOP.
+
+## Output format
+{
+  "prd_path": "/abs/path/to/docs/prd/<slug>.md",
+  "confidence": 0.0
+}
+
+## Quality criteria
+Passes if: file written; all nine `## ` headings present and in canonical order; no duplicate headings; no unresolved placeholders; file parses as valid Markdown.
+Fails if: any heading missing or out of order; duplicate headings; placeholders remain; file written outside `docs/prd/`.
+
+## Common pitfalls
+- Reordering Success Metrics before Goals to "flow better" — order is fixed.
+- Writing to `docs/<slug>.md` instead of `docs/prd/<slug>.md`.
+- Overwriting an approved PRD without human confirmation.
+- Concatenating sections without blank lines between, breaking Markdown rendering.
+
+## Examples
+Good final structure:
+# PRD: Quiz Loop
+
+## Executive Summary
+...
+
+## Problem Statement
+...
+
+## Goals & Non-Goals
+...
+
+## User Personas
+...
+
+## Functional Requirements
+...
+
+## Non-Functional Requirements
+...
+
+## Success Metrics
+...
+
+## Out of Scope
+...
+
+## Open Questions
+...
+
+Bad:
+# PRD
+## Goals
+## Executive Summary  (wrong order, generic title)
 
 ## Stop condition
+File written at `docs/prd/<slug>.md` (or `.draft.md` if pending approval); all nine headings present in order; no unresolved placeholders or all listed in open_questions; confidence reported.
 
-All nine headings present; file parses as valid Markdown; no unresolved
-`<...>` placeholders.
+## Confidence guidance
+Lower confidence when:
+- Any placeholders remain after assembly -> <= 0.7
+- Slug was inferred rather than provided -> <= 0.8
+- Open Questions section was synthesized rather than authored -> <= 0.75
+- Sections had to be lightly reformatted to fit -> <= 0.8
+Confidence >= 0.85 is required to proceed without human review.
