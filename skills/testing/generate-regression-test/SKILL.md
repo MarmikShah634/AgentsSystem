@@ -1,0 +1,19 @@
+---
+id: generate-regression-test
+category: testing
+owner_agent: tester
+inputs:
+  - bug_report
+outputs:
+  - test_file_path
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: generate-regression-test
+
+## Task
+
+Write a failing test that reproduces the bug described in `bug_report`.
+Run it once to confirm it fails for the right reason. Hand the failing
+test off to the coder's `fix-bug` skill.

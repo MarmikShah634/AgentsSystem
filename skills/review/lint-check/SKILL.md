@@ -1,0 +1,18 @@
+---
+id: lint-check
+category: review
+owner_agent: reviewer
+inputs:
+  - target_paths
+outputs:
+  - lint_report
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: lint-check
+
+## Task
+
+Run the repo's configured linter (eslint/ruff/clippy/golangci-lint/etc.).
+Emit a normalised list of `{path, line, rule, severity}`.

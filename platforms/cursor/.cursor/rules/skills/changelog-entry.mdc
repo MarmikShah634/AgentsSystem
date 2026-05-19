@@ -1,0 +1,24 @@
+---
+description: "Skill: changelog-entry"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: changelog-entry
+category: docs
+owner_agent: docs
+inputs:
+  - plan_id
+  - patch_summary
+outputs:
+  - changelog_entry
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: changelog-entry
+
+## Task
+
+Append a Keep-a-Changelog entry referencing the plan id and a one-line
+summary of the user-visible change.

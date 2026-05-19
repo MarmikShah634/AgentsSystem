@@ -1,0 +1,13 @@
+[project]
+name = "agentic-dev-system"
+version = "0.1.0"
+description = "Orchestrator-managed multi-agent SDLC for Claude, Cursor, Antigravity, and Codex"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+yaml = ["PyYAML>=6.0"]
+test = ["pytest>=7.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

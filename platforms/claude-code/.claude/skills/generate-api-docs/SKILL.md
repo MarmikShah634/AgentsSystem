@@ -1,0 +1,18 @@
+---
+id: generate-api-docs
+category: docs
+owner_agent: docs
+inputs:
+  - source_paths
+outputs:
+  - api_docs_path
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: generate-api-docs
+
+## Task
+
+Run the language-native doc generator (Sphinx, TypeDoc, godoc, rustdoc,
+javadoc, etc.) over `source_paths` and emit the output path.

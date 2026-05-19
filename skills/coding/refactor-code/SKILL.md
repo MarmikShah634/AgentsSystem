@@ -1,0 +1,25 @@
+---
+id: refactor-code
+category: coding
+owner_agent: coder
+inputs:
+  - target_paths
+  - refactor_goal
+outputs:
+  - patch
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: refactor-code
+
+## Task
+
+Behaviour-preserving change limited to `target_paths`. The paired test
+suite must remain green with no edits to test files.
+
+## Do NOT
+
+- Change public APIs.
+- Introduce new dependencies.
+- Touch files outside `target_paths`.

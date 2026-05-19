@@ -1,0 +1,18 @@
+---
+id: secret-scan
+category: review
+owner_agent: security
+inputs:
+  - patch
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: secret-scan
+
+## Task
+
+Detect API keys, tokens, private keys, cloud credentials in the patch
+using high-entropy + known-pattern heuristics. Any hit = `block`.

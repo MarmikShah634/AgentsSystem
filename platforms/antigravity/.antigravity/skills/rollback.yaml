@@ -1,0 +1,4 @@
+id: rollback
+category: deploy
+source: ../../skills/deploy/rollback/SKILL.md
+kind: skill

@@ -1,0 +1,23 @@
+# Audit + plan run data — project-specific, not source-of-truth.
+logs/audit/*.jsonl
+logs/plans/*.json
+!logs/.gitkeep
+!logs/README.md
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+puppeteer/node_modules/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,23 @@
+---
+description: "Skill: dependency-audit"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: dependency-audit
+category: review
+owner_agent: security
+inputs:
+  - manifest_path
+outputs:
+  - vulnerabilities
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: dependency-audit
+
+## Task
+
+Run the stack's native vulnerability scanner (`npm audit`, `pip-audit`,
+`cargo audit`, `govulncheck`, `bundler-audit`, etc.) and emit CVE list.

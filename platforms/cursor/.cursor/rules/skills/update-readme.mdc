@@ -1,0 +1,24 @@
+---
+description: "Skill: update-readme"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: update-readme
+category: docs
+owner_agent: docs
+inputs:
+  - patch
+outputs:
+  - doc_changes
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: update-readme
+
+## Task
+
+If the patch changes any documented surface (CLI, public API, env vars,
+config keys), update README accordingly. If nothing documented changed,
+emit `doc_changes: []` and exit.

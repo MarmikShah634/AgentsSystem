@@ -1,0 +1,4 @@
+id: run-migration
+category: deploy
+source: ../../skills/deploy/run-migration/SKILL.md
+kind: skill

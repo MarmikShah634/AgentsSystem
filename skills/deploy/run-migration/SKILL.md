@@ -1,0 +1,19 @@
+---
+id: run-migration
+category: deploy
+owner_agent: deployer
+inputs:
+  - migration_path
+  - environment
+outputs:
+  - applied_revision
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: run-migration
+
+## Task
+
+Apply a database migration in `environment`. ALWAYS human-gated. ALWAYS
+record the previous revision for rollback.

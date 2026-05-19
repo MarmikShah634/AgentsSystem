@@ -1,0 +1,27 @@
+---
+id: generate-unit-test
+category: testing
+owner_agent: tester
+inputs:
+  - target_path
+  - acceptance_criteria
+outputs:
+  - test_file_path
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: generate-unit-test
+
+## Task
+
+Write a unit test exercising the function/module at `target_path`. Use
+the project's native runner (detected, not assumed). Include:
+
+- One test per G/W/T criterion.
+- At least one negative test (bad input / error path).
+
+## Stop condition
+
+Test file exists, runner discovers it, all new tests pass against the
+current code.

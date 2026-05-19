@@ -1,0 +1,30 @@
+---
+description: "Skill: run-tests"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: run-tests
+category: testing
+owner_agent: tester
+inputs:
+  - runner
+  - target
+outputs:
+  - results
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: run-tests
+
+## Task
+
+Execute the project's native test runner and parse pass/fail counts.
+
+## Output
+
+```json
+{"passed": 0, "failed": 0, "skipped": 0, "duration_ms": 0,
+ "log_tail": "last 50 lines on failure"}
+```

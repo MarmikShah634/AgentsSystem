@@ -1,0 +1,42 @@
+---
+description: "Skill: gather-user-stories"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: gather-user-stories
+category: requirements
+owner_agent: requirements
+inputs:
+  - goal: "free-form goal string"
+  - context_files: "list of paths"
+outputs:
+  - user_stories
+requires_plan: false
+emits_confidence: true
+---
+
+# Skill: gather-user-stories
+
+## Task
+
+Extract user stories from a free-form goal in the canonical
+"As a / I want / So that" shape.
+
+## Procedure
+
+1. Read the goal verbatim.
+2. Identify each distinct user-facing capability.
+3. Emit one story per capability — no compounds.
+4. List ambiguities in `open_questions`. Lower confidence accordingly.
+
+## Stop condition
+
+You are done when every capability in the goal maps to at least one story
+and no story compounds two capabilities.
+
+## Do NOT
+
+- Invent stories the goal doesn't imply.
+- Speculate about tech.
+- Compress multiple capabilities into one story.
