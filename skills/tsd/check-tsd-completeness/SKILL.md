@@ -3,16 +3,61 @@ id: check-tsd-completeness
 category: tsd
 owner_agent: tech-spec-reviewer
 inputs:
-  - tsd_path
+  - tsd_path: "Absolute path to the assembled TSD markdown"
 outputs:
-  - findings
+  - findings: "List of {section, kind: 'incomplete', msg, fix} objects; never rewrites the TSD"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.95
 ---
 
 # Skill: check-tsd-completeness
 
-## Task
+## Purpose
+Verify the TSD has all seven canonical sections, each non-empty and substantively populated, and that every PRD functional requirement maps to at least one component contract or API contract entry. Findings only — never modify the TSD.
 
-Verify the TSD has all seven sections and each is non-empty. Verify
-every PRD FR has a matching component contract or API contract entry.
+## When to invoke
+Invoke after `assemble-tsd` and before scoring. Do NOT invoke to: judge whether contracts are right (that's `check-tsd-implementability` and `check-tsd-contract-consistency`), or to rewrite sections.
+
+## Procedure (follow exactly)
+1. Load the TSD at `tsd_path`. Locate the seven canonical H2 headings in order: Overview, Component Contracts, Data Contracts, API Contracts, Error Model, Observability, Rollout Plan.
+2. For each missing heading, emit a finding `{section, kind: "incomplete", msg, fix}`.
+3. For each present heading, check the section body is more than a placeholder. A section under 100 words OR containing only a heading + empty list is `incomplete`.
+4. Load the linked PRD (resolve from Overview cross-refs). For each FR id in the PRD, confirm it appears at least once in either Component Contracts or API Contracts. Missing FRs become findings.
+5. Confirm: every error-model code is referenced by at least one component or API; every observability metric has a target; every rollout flag has a gated FR.
+6. Emit findings only. Do not rewrite. Do not edit the TSD.
+
+## How to think
+- A section can be "present but empty"; word count and structure both matter.
+- Completeness is binary per check; report each gap separately.
+- Missing FR coverage is the most expensive miss — be exhaustive.
+- Do not infer that an FR is covered without an explicit textual reference.
+
+## Required inputs
+`tsd_path` must exist and be readable. If the file cannot be parsed as markdown with H2 sections, STOP.
+
+## Output format
+```
+{"findings": [{"section": "Error Model", "kind": "incomplete", "msg": "FR-7 has no error code", "fix": "Add an error class covering FR-7's failure path"}], "confidence": 0.0}
+```
+
+## Quality criteria
+Passes if: every missing/empty section reported; every uncovered FR reported; every dangling error code or metric reported; no false positives.
+Fails if: silently passing an empty section; flagging non-issues; rewriting the TSD; missing FR coverage gaps.
+
+## Common pitfalls
+- Counting placeholder text (`TBD`) as content.
+- Skipping the PRD round-trip because it's tedious.
+- Conflating completeness with consistency (that's a different skill).
+- Reporting prose-style suggestions instead of structured findings.
+
+## Examples
+Good: finding `{section: "Observability", kind: "incomplete", msg: "NFR-3 (p95<250ms) has no metric", fix: "Add http_request_duration_ms histogram with route label"}`.
+Bad: finding `{msg: "the spec feels thin"}` — not actionable, not structured.
+
+## Stop condition
+A findings list exists covering every missing section, empty section, uncovered FR, dangling error code, and unmeasured NFR; the TSD was not modified.
+
+## Confidence guidance
+Lower when: PRD FR ids absent (≤0.85 — coverage check is approximate), TSD structure non-standard (≤0.9), sections present but ambiguous in scope (≤0.9). Required floor 0.95.
