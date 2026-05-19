@@ -3,21 +3,100 @@ id: audit-keyboard-navigation
 category: a11y
 owner_agent: accessibility-auditor
 inputs:
-  - target_path
+  - target_path: "absolute path to the page or component under audit"
+  - flow: "optional ordered list of user actions to traverse"
 outputs:
-  - findings
+  - findings: "list of {wcag, severity, path, msg, fix}"
+  - verdict: "pass|block"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.95
 ---
 
 # Skill: audit-keyboard-navigation
 
-## Task
+## Purpose
+Verify every interactive element at `target_path` is reachable AND
+operable via keyboard alone, with tab order matching visual reading
+order. Findings only — never modify code. WCAG 2.2 2.1.1 (Keyboard)
+and 2.4.3 (Focus Order). Anti-hallucination: cite the exact
+element/selector for each finding.
 
-WCAG 2.2 2.1.1/2.4.3. Verify every interactive element is reachable AND
-operable via keyboard alone. Tab order must follow visual reading order.
-Flag any:
+## When to invoke
+Plan step requests a11y audit AND target contains interactive
+controls (buttons, links, inputs, custom widgets).
+Do NOT invoke for: static-text-only pages, generated assets, or
+non-DOM artefacts.
 
-- Element with `onClick` but no `onKeyDown` equivalent.
-- Custom widget without an ARIA role + keyboard handlers.
-- Tab order regression vs. visual order.
+## Procedure (follow exactly)
+1. Enumerate all interactive nodes: `button`, `a[href]`, `input`,
+   `select`, `textarea`, `[role]` with widget roles, `[tabindex]`,
+   and anything bound to `onClick`.
+2. For each node, verify:
+   - It receives focus via Tab (not skipped, no `tabindex="-1"`
+     unless intentionally programmatic).
+   - It is operable via Enter and/or Space per its role.
+   - Custom widgets implement the ARIA Authoring Practices keyboard
+     pattern for that role (e.g. arrow keys on `role=listbox`).
+3. Walk the tab order. Compare to visual reading order (top-to-bottom,
+   left-to-right in LTR). Flag any inversion.
+4. Flag every:
+   - Element with `onClick` but no `onKeyDown`/role pairing.
+   - Positive `tabindex` (> 0) — almost always wrong.
+   - `div`/`span` acting as a button without `role="button"` +
+     `tabindex="0"` + key handler.
+5. Continue full sweep even after first failure.
+
+## How to think
+- Modal open → focus must enter modal and trap inside until close.
+- Hidden via `display:none` → not focusable, OK; via `visibility:
+  hidden` same; via `opacity:0` still focusable, FLAG.
+- Skip links → required if main nav > 5 items before content.
+- Drag-and-drop → must have keyboard alternative.
+
+## Required inputs
+Inspectable DOM or component source at `target_path`.
+
+## Output format
+```json
+{"findings": [
+   {"wcag": "2.1.1", "severity": "error",
+    "path": "Header.tsx > div.menu-toggle",
+    "msg": "div with onClick but no key handler or role",
+    "fix": "Use <button> or add role=button, tabindex=0, onKeyDown for Enter/Space."}],
+ "verdict": "block", "confidence": 0.96}
+```
+
+## Quality criteria
+Pass: every interactive node inspected; tab order traced; each
+finding names the element and a concrete fix; verdict reflects
+severity.
+Fail: omitting custom widgets; declaring "tab order ok" without
+listing the sequence; suggesting non-WCAG remedies.
+
+## Common pitfalls
+- Trusting `tabIndex` prop without checking rendered DOM.
+- Missing roving-tabindex pattern on composite widgets.
+- Ignoring keyboard traps in third-party embeds.
+- Treating `:focus-within` as proof of keyboard reachability.
+
+## Examples
+Pass:
+```jsx
+<button onClick={open} onKeyDown={handleKeys}>Menu</button>
+```
+Fail:
+```jsx
+<div onClick={open}>Menu</div>
+// no role, no tabindex, no key handler → 2.1.1 error
+```
+
+## Stop condition
+All interactive nodes inspected; tab order recorded; findings
+emitted; verdict set; no source modified.
+
+## Confidence guidance
+Static DOM analysed fully = 0.97; dynamic widgets partially traced
+≤0.92; third-party embed not introspectable ≤0.88. Must be ≥0.95 to
+emit.

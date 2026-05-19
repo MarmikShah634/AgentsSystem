@@ -3,16 +3,66 @@ id: check-sprint-goal-coherence
 category: sprint
 owner_agent: sprint-reviewer
 inputs:
-  - sprints
+  - sprints: "array of {sprint_id, story_ids, goal, stories: [{story_id, narrative, points}]}"
 outputs:
-  - findings
+  - findings: "array of {area, severity, sprint_id, msg, fix}"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: check-sprint-goal-coherence
 
-## Task
+## Purpose
+Flag sprints whose goal does not describe a deliverable or whose stories do not back the stated goal. Coherence failures predict mid-sprint scope drift.
 
-Flag a sprint when its goal does not describe a deliverable, or when
-≥30% of the sprint's stories don't contribute to the stated goal.
+## When to invoke
+Invoke when every sprint has a `goal` AND story narratives + points are hydrated.
+Do NOT invoke to: rewrite goals (use assign-sprint-goals), check balance/dependencies (use the dedicated skills), or score readiness (use score-sprint-plan-quality).
+
+## Procedure (follow exactly)
+1. For each sprint, parse the goal. Verify it names a concrete deliverable (a capability shipped, an artifact landed). If vague verbs ("improve", "work on", "explore") appear, emit `severity: "warn"`.
+2. Verify the goal is single-clause. Multi-clause goal joined by "and"/";" → emit `severity: "error"`.
+3. For each story, classify whether it directly contributes to the goal (yes/no). A story contributes if removing it would invalidate the goal sentence.
+4. Compute the fraction of NON-contributing points: sum(points of non-contributing stories) / total_points. If > 0.30, emit `severity: "error"` for incoherence.
+5. Every finding includes `fix`: either rewrite goal to match dominant theme, or move off-theme stories.
+6. Emit findings; never rewrite goals or move stories.
+
+## How to think
+- Sprint contains observability + auth work, goal mentions only auth, and observability is 20% → coherent; pass.
+- Goal says "Improve performance" with no metric → vague; warn.
+- Goal joins "ship signup and ship login" → split-intent; error.
+- All stories are platform plumbing, no user-visible outcome → goal must say so; if it claims user-visible value, error.
+
+## Required inputs
+Sprints with goals and hydrated story narratives + points. Missing → STOP.
+
+## Output format
+```json
+{"findings":[
+  {"area":"goal-coherence","severity":"error","sprint_id":"SP2",
+   "msg":"42% of SP2 points (S6, S7) do not support goal 'Users can verify their email'.",
+   "fix":"move S6,S7 to SP3 or rewrite SP2 goal to cover both themes."}],
+ "confidence":0.0}
+```
+
+## Quality criteria
+Passes if: every goal parsed; vague verbs flagged warn; multi-clause flagged error; off-theme fraction computed against points (not story count); fixes are concrete.
+Fails if: counting stories instead of points; missing vague-verb check; rewriting goals; missing fix.
+
+## Common pitfalls
+- Using story count instead of point fraction.
+- Accepting "and"-joined goals because both halves are valid.
+- Flagging infra-only sprints as incoherent when the goal correctly names the operator outcome.
+- Issuing fixes without naming the off-theme stories.
+
+## Examples
+✅ Finding: warn, sprint=SP1, msg="Goal verb 'improve' is vague", fix="restate goal as 'Signup completes in under 3s p95'".
+❌ Anti-pattern: "Goal is unclear" with no specific verb cited and no rewrite suggestion.
+
+## Stop condition
+Every sprint goal evaluated against vagueness, multi-clause, and ≤30% off-theme rules; findings carry concrete fixes.
+
+## Confidence guidance
+Lower when: stories lack narratives (≤0.7), goal references external context (≤0.75), >40% infra points (≤0.8). ≥0.85 required.
