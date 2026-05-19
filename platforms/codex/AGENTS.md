@@ -788,555 +788,2658 @@ running through the Codex CLI in this repository.
     
     # Skill: audit-aria-labels
     
-    ## Task
+    ## Purpose
+    Verify every interactive and informative element has a correct
+    accessible name per WCAG 2.2 4.1.2 (Name, Role, Value). Findings only.
+    Anti-hallucination: name the element and the missing/duplicate
+    attribute precisely.
     
-    WCAG 2.2 4.1.2. For every interactive element verify accessible name:
+    ## When to invoke
+    Plan step requests a11y audit AND target contains forms, buttons,
+    links, images, or custom widgets.
+    Do NOT invoke for: empty layouts or pure-data outputs.
     
-    - `<button>` has text content OR `aria-label`/`aria-labelledby`.
-    - `<input>` has a `<label for>` OR `aria-label`.
-    - `<img>` has `alt` (empty for decorative).
-    - Icon-only buttons MUST have `aria-label`.
+    ## Procedure (follow exactly)
+    1. Enumerate every node from the categories below.
+    2. For each, derive the accessible name using the W3C accname algo
+       priority: `aria-labelledby` → `aria-label` → associated `<label
+       for>` → `title` → text content → `alt` → `placeholder` (last
+       resort, flag if used as sole name).
+    3. Required rules:
+       - `<button>`: visible text OR `aria-label`/`aria-labelledby`.
+       - `<input>` (non-hidden): `<label for>` linking by `id` OR
+         `aria-label` OR `aria-labelledby`. `placeholder` is NOT a
+         label.
+       - `<img>`: `alt` present (empty string allowed for decorative);
+         missing `alt` = error.
+       - Icon-only buttons (no visible text): MUST have `aria-label`.
+       - `<a>`: must have discernible text; "click here" alone is a
+         finding under 2.4.4.
+    4. Flag duplicate accessible names within a landmark when they point
+       to different destinations (ambiguous to AT users).
+    5. Flag empty `aria-label=""` or `aria-labelledby` pointing to a
+       non-existent id.
     
-    Flag any missing or duplicate accessible names.
+    ## How to think
+    - Localised strings → check the default locale, note risk for others.
+    - Dynamic labels (state-dependent) → ensure they update via React
+      state or `aria-live`, not stale text.
+    - SVG used as icon → require `<title>` inside or `aria-label` on the
+      wrapping button.
+    - Form errors → must reference the field via `aria-describedby`.
+    
+    ## Required inputs
+    Inspectable markup at `target_path`.
+    
+    ## Output format
+    ```json
+    {"findings": [
+       {"wcag": "4.1.2", "severity": "error",
+        "path": "SearchBar.tsx > button.icon",
+        "msg": "Icon-only button has no accessible name",
+        "fix": "Add aria-label=\"Search\"."}],
+     "verdict": "block", "confidence": 0.97}
+    ```
+    
+    ## Quality criteria
+    Pass: every node from the four categories evaluated; each finding
+    states the algorithm's resolution and the fix; verdict matches
+    severity.
+    Fail: trusting `title` as primary name; accepting `placeholder` as
+    label; missing `<img alt>` enforcement.
+    
+    ## Common pitfalls
+    - Marking `alt=""` as an error — empty alt is intentional for
+      decorative images.
+    - Missing the `aria-labelledby`-points-to-missing-id case.
+    - Skipping SVG icons because they "have a class".
+    - Counting `aria-label` on a `<div>` with no role — invalid.
+    
+    ## Examples
+    Pass:
+    ```html
+    <button aria-label="Close dialog"><svg aria-hidden="true">…</svg></button>
+    <label for="email">Email</label><input id="email" type="email">
+    ```
+    Fail:
+    ```html
+    <button><svg>…</svg></button>            <!-- no name -->
+    <input type="text" placeholder="Email">  <!-- placeholder not a label -->
+    ```
+    
+    ## Stop condition
+    All four categories swept; findings emitted with element paths and
+    fixes; verdict set; no source modified.
+    
+    ## Confidence guidance
+    Static template fully analysed = 0.97; dynamic labels partially
+    verified ≤0.92; third-party widget opaque ≤0.88. Must be ≥0.95 to
+    emit.
 
 ### Skill: audit-color-contrast
 
     
     # Skill: audit-color-contrast
     
-    ## Task
+    ## Purpose
+    Audit `target_path` against WCAG 2.2 success criteria 1.4.3 (Contrast
+    Minimum) and 1.4.11 (Non-Text Contrast). Emit findings only — never
+    modify code. Anti-hallucination: every flagged pair must include the
+    two measured colour values and the computed ratio.
     
-    WCAG 2.2 1.4.3/1.4.11. For every text-on-background pair:
+    ## When to invoke
+    Plan step requests accessibility audit AND the target renders text or
+    UI affordances AND design tokens or computed styles are inspectable.
+    Do NOT invoke for: server-rendered API responses, raw data files, or
+    images without overlaid text.
     
-    - Body text: contrast ≥ 4.5:1.
-    - Large text (≥18pt or 14pt bold): ≥ 3:1.
-    - UI components & graphical objects: ≥ 3:1.
+    ## Procedure (follow exactly)
+    1. Enumerate every text-on-background pair in the target. For
+       components, resolve tokens (CSS vars, Tailwind classes, theme
+       objects) to concrete hex/rgb.
+    2. Compute relative luminance per WCAG formula, then contrast ratio
+       `(L1 + 0.05) / (L2 + 0.05)`.
+    3. Apply thresholds:
+       - Body text (<18pt, <14pt-bold): ratio ≥ 4.5:1.
+       - Large text (≥18pt or ≥14pt-bold): ratio ≥ 3:1.
+       - UI components / graphical objects (icons, focus rings, form
+         borders): ≥ 3:1 against adjacent colour.
+    4. For each failing pair emit a finding with `wcag` set to "1.4.3" or
+       "1.4.11", severity `error`, the offending selector/component
+       path, both colour values, the measured ratio, and a concrete fix.
+    5. Run every check — partial audit is not an audit. Even if the first
+       token fails, continue.
     
-    Use the project's tokens; flag any failing pair with `wcag: "1.4.3"` and
-    both colours + measured ratio.
+    ## How to think
+    - Token resolves to `currentColor` → resolve via cascade; if
+      ambiguous, lower confidence and flag.
+    - Gradient background → test the worst-case stop.
+    - Hover/focus states → audit each state separately.
+    - Disabled controls → WCAG exempts them; note but do not block.
+    - Text over image → require minimum overlay or text-shadow; flag if
+      absent.
+    
+    ## Required inputs
+    `target_path` must resolve to inspectable markup or tokens.
+    
+    ## Output format
+    ```json
+    {"findings": [
+       {"wcag": "1.4.3", "severity": "error",
+        "path": "components/Button.tsx > .primary",
+        "msg": "Body text #777 on #eee = 2.6:1 (need 4.5:1)",
+        "fix": "Darken text token to #595959 (4.6:1) or lighten bg."}],
+     "verdict": "block", "confidence": 0.97}
+    ```
+    
+    ## Quality criteria
+    Pass: every text-on-bg pair examined; every failing pair includes
+    both colours + ratio + fix; verdict `block` iff any severity=error.
+    Fail: missing colour values; ratios rounded misleadingly (always show
+    to 1 decimal); silently skipping states.
+    
+    ## Common pitfalls
+    - Comparing token name to token name instead of resolved colour.
+    - Ignoring opacity — alpha-blend against the parent bg first.
+    - Using sRGB hex with non-WCAG formula.
+    - Reporting "looks fine" without a number.
+    
+    ## Examples
+    Pass:
+    ```html
+    <button class="bg-blue-700 text-white">Save</button>
+    <!-- #1d4ed8 on #ffffff = 8.6:1 ✅ -->
+    ```
+    Fail:
+    ```html
+    <button class="bg-gray-200 text-gray-400">Save</button>
+    <!-- #9ca3af on #e5e7eb = 1.9:1 ❌ → finding emitted -->
+    ```
+    
+    ## Stop condition
+    All pairs inspected; findings emitted with ratios; verdict set; no
+    source files modified.
+    
+    ## Confidence guidance
+    Tokens fully resolved = 0.97; one indirection guessed ≤0.92;
+    gradient/image bg approximated ≤0.9; missing state coverage ≤0.85.
+    Must be ≥0.95 to emit.
 
 ### Skill: audit-focus-management
 
     
     # Skill: audit-focus-management
     
-    ## Task
+    ## Purpose
+    Validate visible focus styles, focus movement on open/close of
+    overlays, and absence of focus traps outside modals. WCAG 2.2 2.4.7
+    (Focus Visible) and 2.4.11 (Focus Not Obscured, Minimum). Findings
+    only.
     
-    WCAG 2.2 2.4.7/2.4.11. Verify:
+    ## When to invoke
+    Plan step requests a11y audit AND target contains focusable elements
+    or overlay components (modal, drawer, popover, menu).
+    Do NOT invoke for: purely static text content.
     
-    - Visible focus indicator on every focusable element (≥2px outline).
-    - Focus moves to opened dialogs / drawers; returns on close.
-    - No focus trap outside modal contexts.
-    - `outline: none` is only allowed when paired with a custom focus style.
+    ## Procedure (follow exactly)
+    1. Visible focus indicator on every focusable element:
+       - Minimum ≥ 2px outline OR equivalent (background change with
+         ≥ 3:1 contrast against adjacent colour).
+       - `outline: none` only allowed when paired with a custom focus
+         style — flag the bare reset.
+    2. Focus movement on overlay open:
+       - When a dialog/drawer opens, focus MUST move into it (typically
+         to the first focusable element or the close button).
+       - On close, focus MUST return to the element that triggered the
+         open (the invoker).
+    3. Focus trap:
+       - Within an open modal: Tab/Shift+Tab MUST cycle inside.
+       - Outside modal contexts: NO trap allowed (no `tabindex` games
+         that prevent leaving a section).
+    4. Focus not obscured (2.4.11): the focused element MUST be at least
+       partially visible — flag sticky headers/footers that cover it.
+    5. `tabindex` rules: only `0` or `-1`; positive values are a
+       finding.
+    
+    ## How to think
+    - CSS `:focus-visible` is preferred over `:focus` — but lacking
+      `:focus-visible` is not itself a failure if `:focus` is styled.
+    - Programmatic `element.focus()` in a `useEffect` is the canonical
+      React pattern for overlay focus.
+    - Returning focus on close requires storing the invoker before open.
+    - Sticky elements with `position: sticky` + high z-index commonly
+      obscure focus near the viewport edge — check.
+    
+    ## Required inputs
+    Inspectable markup and styles at `target_path`.
+    
+    ## Output format
+    ```json
+    {"findings": [
+       {"wcag": "2.4.7", "severity": "error",
+        "path": "globals.css > *:focus",
+        "msg": "outline:none with no replacement style",
+        "fix": "Add :focus-visible { outline: 2px solid #1d4ed8; }"}],
+     "verdict": "block", "confidence": 0.96}
+    ```
+    
+    ## Quality criteria
+    Pass: focus styles inspected globally and per component; overlay
+    open/close traced; trap checked inside vs outside modal; findings
+    specific and actionable.
+    Fail: accepting `outline: 0` without replacement; not testing return
+    focus; missing the obscured-focus case.
+    
+    ## Common pitfalls
+    - Removing browser default outline in a CSS reset and forgetting to
+      restore it.
+    - Focusing the modal container instead of the first interactive
+      child (announces nothing).
+    - Forgetting `inert` on background content while modal is open.
+    - Trapping focus inside a non-modal popover.
+    
+    ## Examples
+    Pass:
+    ```css
+    :focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
+    ```
+    ```jsx
+    useEffect(() => { if (open) closeRef.current?.focus(); }, [open]);
+    ```
+    Fail:
+    ```css
+    *:focus { outline: none; }   /* no replacement */
+    ```
+    
+    ## Stop condition
+    Focus styles + overlay focus flow + trap rules + 2.4.11 obscuring
+    checked; findings emitted; verdict set; no source modified.
+    
+    ## Confidence guidance
+    Static styles + clear overlay code = 0.97; runtime behaviour inferred
+    ≤0.92; third-party overlay opaque ≤0.88. Must be ≥0.95 to emit.
 
 ### Skill: audit-keyboard-navigation
 
     
     # Skill: audit-keyboard-navigation
     
-    ## Task
+    ## Purpose
+    Verify every interactive element at `target_path` is reachable AND
+    operable via keyboard alone, with tab order matching visual reading
+    order. Findings only — never modify code. WCAG 2.2 2.1.1 (Keyboard)
+    and 2.4.3 (Focus Order). Anti-hallucination: cite the exact
+    element/selector for each finding.
     
-    WCAG 2.2 2.1.1/2.4.3. Verify every interactive element is reachable AND
-    operable via keyboard alone. Tab order must follow visual reading order.
-    Flag any:
+    ## When to invoke
+    Plan step requests a11y audit AND target contains interactive
+    controls (buttons, links, inputs, custom widgets).
+    Do NOT invoke for: static-text-only pages, generated assets, or
+    non-DOM artefacts.
     
-    - Element with `onClick` but no `onKeyDown` equivalent.
-    - Custom widget without an ARIA role + keyboard handlers.
-    - Tab order regression vs. visual order.
+    ## Procedure (follow exactly)
+    1. Enumerate all interactive nodes: `button`, `a[href]`, `input`,
+       `select`, `textarea`, `[role]` with widget roles, `[tabindex]`,
+       and anything bound to `onClick`.
+    2. For each node, verify:
+       - It receives focus via Tab (not skipped, no `tabindex="-1"`
+         unless intentionally programmatic).
+       - It is operable via Enter and/or Space per its role.
+       - Custom widgets implement the ARIA Authoring Practices keyboard
+         pattern for that role (e.g. arrow keys on `role=listbox`).
+    3. Walk the tab order. Compare to visual reading order (top-to-bottom,
+       left-to-right in LTR). Flag any inversion.
+    4. Flag every:
+       - Element with `onClick` but no `onKeyDown`/role pairing.
+       - Positive `tabindex` (> 0) — almost always wrong.
+       - `div`/`span` acting as a button without `role="button"` +
+         `tabindex="0"` + key handler.
+    5. Continue full sweep even after first failure.
+    
+    ## How to think
+    - Modal open → focus must enter modal and trap inside until close.
+    - Hidden via `display:none` → not focusable, OK; via `visibility:
+      hidden` same; via `opacity:0` still focusable, FLAG.
+    - Skip links → required if main nav > 5 items before content.
+    - Drag-and-drop → must have keyboard alternative.
+    
+    ## Required inputs
+    Inspectable DOM or component source at `target_path`.
+    
+    ## Output format
+    ```json
+    {"findings": [
+       {"wcag": "2.1.1", "severity": "error",
+        "path": "Header.tsx > div.menu-toggle",
+        "msg": "div with onClick but no key handler or role",
+        "fix": "Use <button> or add role=button, tabindex=0, onKeyDown for Enter/Space."}],
+     "verdict": "block", "confidence": 0.96}
+    ```
+    
+    ## Quality criteria
+    Pass: every interactive node inspected; tab order traced; each
+    finding names the element and a concrete fix; verdict reflects
+    severity.
+    Fail: omitting custom widgets; declaring "tab order ok" without
+    listing the sequence; suggesting non-WCAG remedies.
+    
+    ## Common pitfalls
+    - Trusting `tabIndex` prop without checking rendered DOM.
+    - Missing roving-tabindex pattern on composite widgets.
+    - Ignoring keyboard traps in third-party embeds.
+    - Treating `:focus-within` as proof of keyboard reachability.
+    
+    ## Examples
+    Pass:
+    ```jsx
+    <button onClick={open} onKeyDown={handleKeys}>Menu</button>
+    ```
+    Fail:
+    ```jsx
+    <div onClick={open}>Menu</div>
+    // no role, no tabindex, no key handler → 2.1.1 error
+    ```
+    
+    ## Stop condition
+    All interactive nodes inspected; tab order recorded; findings
+    emitted; verdict set; no source modified.
+    
+    ## Confidence guidance
+    Static DOM analysed fully = 0.97; dynamic widgets partially traced
+    ≤0.92; third-party embed not introspectable ≤0.88. Must be ≥0.95 to
+    emit.
 
 ### Skill: audit-screen-reader-flow
 
     
     # Skill: audit-screen-reader-flow
     
-    ## Task
+    ## Purpose
+    Validate that screen reader users receive a coherent linear narration
+    of the page: correct heading hierarchy, landmarks, live regions, and
+    hidden-from-AT decoration. WCAG 2.2 1.3.1 (Info and Relationships) and
+    4.1.3 (Status Messages). Findings only.
     
-    WCAG 2.2 1.3.1/4.1.3. Validate semantic structure:
+    ## When to invoke
+    Plan step requests a11y audit AND target is a full page or a
+    component large enough to define its own structure (e.g. a modal
+    with header/body/footer).
+    Do NOT invoke for: leaf components without semantic structure (e.g.
+    a single icon).
     
-    - One `<h1>` per page; heading hierarchy unbroken.
-    - Landmarks present: `<main>`, `<nav>`, `<header>`, `<footer>`.
-    - Dynamic regions use `aria-live`.
-    - Decorative elements set `aria-hidden="true"`.
+    ## Procedure (follow exactly)
+    1. Heading hierarchy:
+       - Exactly one `<h1>` per page (zero is also a finding).
+       - No level skipped downward (h2 → h4 = error). Upward jumps OK.
+    2. Landmarks required on full pages: `<main>` (exactly one),
+       `<nav>`, `<header>`, `<footer>`. `<aside>` only if used as
+       complementary content.
+    3. Dynamic regions:
+       - Status messages (success/error toasts) MUST use
+         `role="status"` or `aria-live="polite"`.
+       - Errors needing immediate attention: `aria-live="assertive"`
+         (use sparingly).
+    4. Decorative elements MUST set `aria-hidden="true"` (icons,
+       spacers, redundant SVG).
+    5. Reading order: DOM order must match visual order. Flag CSS
+       ordering (`order:`, `flex-direction: row-reverse`,
+       `grid-area`) that diverges.
+    6. Tables: data tables need `<th scope>`; layout tables need
+       `role="presentation"`.
+    
+    ## How to think
+    - Sectioning content reset rules (HTML5 outline) are de-facto not
+      supported in AT; rely on explicit `<h1>`–`<h6>`.
+    - `aria-live` regions must exist in the DOM before content is
+      inserted; injecting both at once is silent.
+    - `role="alert"` is implicitly assertive — do not combine with
+      conflicting `aria-live`.
+    - A skip-link to `#main` requires `<main id="main" tabindex="-1">`.
+    
+    ## Required inputs
+    Inspectable markup at `target_path`.
+    
+    ## Output format
+    ```json
+    {"findings": [
+       {"wcag": "1.3.1", "severity": "error",
+        "path": "Dashboard.tsx",
+        "msg": "Heading jumps h2 → h4",
+        "fix": "Demote stray h4 to h3 or insert intervening h3."}],
+     "verdict": "block", "confidence": 0.96}
+    ```
+    
+    ## Quality criteria
+    Pass: full sweep of headings + landmarks + live regions + decorative
+    hide rules; each finding cites a specific element; verdict reflects
+    severity.
+    Fail: spot-checking, accepting multiple `<h1>`, missing live-region
+    absence on a toast component.
+    
+    ## Common pitfalls
+    - Treating `<section>` as a landmark (it is not unless named).
+    - Forgetting `aria-hidden` on icon inside an already-labelled
+      button (the icon then duplicates the name).
+    - Using `aria-live="assertive"` for non-urgent updates.
+    - DOM order differing from visual via `flex-direction: reverse`.
+    
+    ## Examples
+    Pass:
+    ```html
+    <main>
+      <h1>Dashboard</h1>
+      <section aria-labelledby="recent"><h2 id="recent">Recent</h2></section>
+      <div role="status" aria-live="polite" id="toast"></div>
+    </main>
+    ```
+    Fail:
+    ```html
+    <h1>App</h1><h1>Page</h1>   <!-- two h1 -->
+    <h2>One</h2><h4>Three</h4>  <!-- skipped h3 -->
+    ```
+    
+    ## Stop condition
+    All structural rules checked; findings emitted; verdict set; no
+    source modified.
+    
+    ## Confidence guidance
+    Static markup fully traversed = 0.97; client-rendered structure
+    partially traced ≤0.92; dynamic live regions inferred from code only
+    ≤0.88. Must be ≥0.95 to emit.
 
 ### Skill: design-data-model
 
     
     # Skill: design-data-model
     
-    ## Task
+    ## Purpose
+    Produce a storage-neutral entity-relationship model that captures every persisted concept implied by the requirements. The output seeds `write-data-contracts`; entity and field names defined here are binding for downstream JSON Schema.
     
-    Produce entities + relations as a Mermaid `erDiagram`. One entity per
-    business concept. Note PKs and FKs. No storage-specific syntax.
+    ## When to invoke
+    Invoke during architecture phase, once requirements are stable, before component or API contracts are written. Do NOT invoke to: add a single column to an existing table (use a migration skill), define DTOs (those belong to API contracts), or design caches/indices (storage-specific).
+    
+    ## Procedure (follow exactly)
+    1. List every business concept named or implied by requirements. One entity per concept; do not merge unrelated concepts.
+    2. For each entity, list attributes with primitive types only (`string`, `int`, `float`, `bool`, `datetime`, `uuid`). No ORM types, no `varchar(255)`, no `BIGINT`.
+    3. Mark exactly one primary key per entity (`PK`). Mark every foreign key (`FK`) with the target entity.
+    4. Define relationships using ER cardinality (`||--o{`, `||--||`, `}o--o{`). Name the relationship verb (e.g. `places`, `owns`).
+    5. Defer validation rules (regex, range, enum) to `write-data-contracts`; record them only in the notes list, not in the diagram.
+    6. Output one Mermaid `erDiagram` block plus a short notes list.
+    
+    ## How to think
+    - Junction tables only when a many-to-many has its own attributes.
+    - Soft-delete flags belong in data contracts, not the ER diagram.
+    - Audit fields (`created_at`, `updated_at`) belong in every entity but should be added consistently via the notes list, not repeated by hand.
+    - Do not invent entities to make a diagram look richer.
+    
+    ## Required inputs
+    `requirements` must include at least one functional requirement that implies persistence. If only stateless features are described, STOP — there is no data to model.
+    
+    ## Output format
+    ```mermaid
+    erDiagram
+      USER ||--o{ ORDER : places
+      ORDER ||--|{ ORDER_ITEM : contains
+      USER {
+        uuid id PK
+        string email
+        datetime created_at
+      }
+    ```
+    Plus: `notes: ["all entities carry created_at/updated_at", "Order.status enum deferred to data contracts"]`.
+    
+    ## Quality criteria
+    Passes if: every entity has a PK; every FK targets an existing entity; cardinality declared on every relationship; only primitive types; one entity per business concept.
+    Fails if: ORM-specific syntax leaks in; relationships drawn without cardinality; same concept split across two entities; validation rules embedded in the diagram.
+    
+    ## Common pitfalls
+    - Modeling join tables that don't need to exist.
+    - Using `varchar` or `decimal(10,2)` instead of `string`/`float`.
+    - Conflating `User` and `Account` when the PRD treats them separately.
+    - Forgetting cardinality, leaving relationships ambiguous.
+    
+    ## Examples
+    Good: 4 entities, 3 relationships with verbs, every PK marked, notes list defers enums.
+    Bad: storage-specific types; missing PK on a child entity; relationship with no cardinality.
+    
+    ## Stop condition
+    A valid `erDiagram` block exists with PKs, FKs, cardinality, and primitive types only; notes list captures deferred validation; entity names are ready to be reused verbatim in data contracts.
+    
+    ## Confidence guidance
+    Lower when: PRD is vague on persisted state (≤0.75), many-to-many relationships need junction tables that aren't obvious (≤0.8), audit/soft-delete requirements unstated (≤0.8), entities cross domain boundaries (≤0.7). Need ≥0.85.
 
 ### Skill: generate-architecture-diagram
 
     
     # Skill: generate-architecture-diagram
     
-    ## Task
+    ## Purpose
+    Render the system as a Mermaid `flowchart` showing every component and every directed dependency. The diagram is the visual contract that the TSD's Component Contracts section refers to; nodes and edges must match component names exactly.
     
-    Emit a Mermaid `flowchart` describing components and their dependencies.
-    No prose, just the Mermaid block.
+    ## When to invoke
+    Invoke when the plan asks for an architecture diagram AND a `components` list is already produced (by design-data-model + select-tech-stack). Do NOT invoke to: draw sequence flows (out of scope), illustrate database schema (use erDiagram via design-data-model), or sketch UI wireframes.
+    
+    ## Procedure (follow exactly)
+    1. Parse `components`. Reject duplicates by name.
+    2. Pick a layout direction: `LR` if dependency depth ≤ 3, otherwise `TB`.
+    3. Emit one node per component, id = sanitized name (alnum + underscore), label = exact name.
+    4. For each `depends_on[i]`, emit an edge from the dependent to the dependency: `A --> B`.
+    5. Group nodes into subgraphs by role (e.g. `frontend`, `backend`, `datastore`, `external`) when ≥ 3 components share a role.
+    6. Output ONLY a fenced ```mermaid block. No headings, no explanation, no trailing text.
+    
+    ## How to think
+    - Match TSD component names character-for-character. Renaming here breaks cross-references.
+    - External services (Stripe, Auth0) get their own `external` subgraph.
+    - Bidirectional dependency is almost always a modeling error; STOP and ask human.
+    - Do not invent components not in the input list.
+    
+    ## Required inputs
+    `components` must be non-empty and every `depends_on` reference must point to a name in `components`. If a reference is dangling, STOP — the architecture is incomplete.
+    
+    ## Output format
+    ```mermaid
+    flowchart LR
+      subgraph backend
+        api[api]
+        worker[worker]
+      end
+      subgraph datastore
+        db[(postgres)]
+      end
+      api --> db
+      worker --> db
+    ```
+    
+    ## Quality criteria
+    Passes if: every component is a node; every depends_on is an edge; node labels equal component names; no orphan node unless explicitly standalone; valid Mermaid syntax.
+    Fails if: nodes appear that are not in input; edges point to undefined nodes; prose outside the fence; multiple diagrams emitted.
+    
+    ## Common pitfalls
+    - Adding "user" or "browser" nodes that are not in the component list.
+    - Drawing implicit edges (e.g. "everything reaches the db") instead of explicit ones.
+    - Using fancy shapes for emphasis; stick to default rectangles + cylinder for datastores.
+    - Forgetting to sanitize ids that contain dashes or spaces.
+    
+    ## Examples
+    Good: 6 components, 4 edges, 2 subgraphs, valid Mermaid that renders.
+    Bad: free-text prose explaining the diagram; node names with spaces breaking parsing; invented "load balancer" node not in input.
+    
+    ## Stop condition
+    A single valid `mermaid flowchart` block exists, every input component appears, every dependency is rendered as an edge, and no extra prose accompanies the diagram.
+    
+    ## Confidence guidance
+    Lower when: component list has ambiguous roles (≤0.8), bidirectional dependencies exist (≤0.7), >15 components (≤0.8 — readability suffers), dangling references repaired by guess (≤0.6). Need ≥0.85.
 
 ### Skill: select-tech-stack
 
     
     # Skill: select-tech-stack
     
-    ## Task
+    ## Purpose
+    Choose exactly one language, framework, datastore, and supporting libraries that satisfy every requirement, while honoring any pre-existing stack in the repo. The output binds downstream skills (component contracts, API contracts) to a single technology set; ambiguity here cascades.
     
-    Pick (or confirm) language, framework, datastore, and key libraries.
+    ## When to invoke
+    Invoke when the plan's architecture step requests a tech stack AND requirements are stable (PRD already passed product review). Do NOT invoke to: change a stack on an existing service (use refactor-architecture), pick a single library for a feature (that belongs in the implementing skill), or compare options for human discussion.
     
-    ## Procedure
+    ## Procedure (follow exactly)
+    1. If `detected_stack` is non-empty, treat it as the default. Reuse every field unless a specific requirement makes it impossible.
+    2. For each requirement, list which stack component satisfies it (language feature, framework capability, datastore property, library).
+    3. If a requirement cannot be satisfied by `detected_stack`, propose the minimal swap (one field) and record a one-sentence justification keyed to the requirement id.
+    4. Pick datastore by data shape: relational + transactional → Postgres; document + flexible schema → an existing document store already in use; key/value cache → reuse what is detected.
+    5. Emit exactly ONE stack. Never produce "options" or "alternatives". Never recommend bleeding-edge versions; pin to the latest stable major.
+    6. Do not invent libraries. Every key library must have a justification tied to a requirement id.
     
-    1. If `detected_stack` is non-empty, default to it. Only deviate with
-       a recorded justification per change.
-    2. Map each requirement to the stack components that satisfy it.
-    3. Output exactly one stack — no "options to consider".
+    ## How to think
+    - Detected stack wins unless a requirement is genuinely unsatisfiable. Bias to continuity.
+    - "Industry standard" is not a justification; tie every choice to a requirement id.
+    - If two requirements conflict on stack (e.g. realtime + simple deploy), STOP and ask human.
+    - Prefer boring technology. New = risk.
+    
+    ## Required inputs
+    `requirements` must contain at least one functional requirement with an id. `detected_stack` may be empty. If `requirements` is empty, STOP — there is nothing to satisfy.
+    
+    ## Output format
+    ```
+    {
+      "tech_stack": {
+        "language": "...",
+        "framework": "...",
+        "datastore": "...",
+        "key_libraries": ["..."],
+        "runtime": "...",
+        "package_manager": "...",
+        "justifications": [{"choice": "...", "requirement_id": "FR-3", "reason": "..."}]
+      },
+      "confidence": 0.0
+    }
+    ```
+    
+    ## Quality criteria
+    Passes if: every field set; every key_library justified by a requirement id; detected_stack overridden only with explicit reason; one stack only.
+    Fails if: multiple stacks offered; libraries listed without justification; detected_stack ignored without reason; vague reasons like "best practice".
+    
+    ## Common pitfalls
+    - Replacing the detected stack because it feels old. Stay.
+    - Listing 10 libraries when 3 suffice. Minimize.
+    - Picking a datastore by hype rather than by data shape.
+    - Using marketing terms ("blazing fast") instead of requirement ids.
+    
+    ## Examples
+    Good: detected_stack is Python+FastAPI+Postgres; output keeps all three, adds `pydantic` justified by FR-2 (schema validation), adds `httpx` justified by FR-7 (outbound calls).
+    Bad: detected_stack ignored; output says "Rust because performance"; no requirement id; lists 12 libraries.
+    
+    ## Stop condition
+    A single tech_stack object exists with every field populated, every key library carries a requirement-id justification, and either detected_stack is fully reused or each deviation has a recorded reason.
+    
+    ## Confidence guidance
+    Lower when: requirements have no NFR ids (≤0.75), two requirements conflict on stack (≤0.7), greenfield with no detected stack (≤0.8), an unfamiliar requirement forces a novel library (≤0.7). Need ≥0.85 to pass.
 
 ### Skill: fix-backend-bug
 
     
     # Skill: fix-backend-bug
     
-    ## Task
+    ## Purpose
+    Apply the minimum-diff fix for a server-tier bug so that the supplied failing test turns green while every previously-green test stays green and no API or DB contract changes.
     
-    Minimum-diff fix for a server-tier bug. The failing test must exist
-    before the fix (planner ensures via `generate-regression-test`).
+    ## When to invoke
+    Invoke when the plan step is fix a backend bug AND `failing_test` exists and currently fails AND the failure reproduces locally. Reject if the test is missing — request `generate-regression-test` first. Reject if the symptom is UI-tier.
+    
+    ## Procedure (follow exactly)
+    1. Run `failing_test`. Confirm it fails for the reason described in `bug_report`. If it fails for an unrelated reason, STOP and revisit the test.
+    2. Locate the offending code via the stack trace + `suspected_paths`. Map the failure to a layer: handler / service / repository / model. Fix at the correct layer; do not paper over from a higher layer.
+    3. Form a one-sentence root-cause hypothesis. Write it in `rationale`. If you cannot, STOP — do not patch blindly.
+    4. Apply the smallest fix that addresses the root cause. Forbidden: changing the test, broadening a `try/except`, swallowing the error, returning a fake success, changing the HTTP status code to hide a 500.
+    5. Run the full backend test suite. The target test must pass; all others must remain green.
+    6. Confirm: no change to OpenAPI/JSON schemas, no change to DB schema, no change to env-vars.
+    7. If the root cause is a data issue (bad rows), the code fix must be defensive against future occurrences — and a data-cleanup migration goes through `implement-migration` separately.
+    
+    ## How to think
+    - "Fix" requires schema change → reject this step; planner must add `implement-migration` first.
+    - N+1 query causing timeouts → fix the query/eager-load in repository, not by extending the timeout.
+    - Race condition under load → fix the locking/idempotency, not by retrying blindly.
+    - Tempted to refactor while fixing → don't; emit a follow-up `refactor-backend` step.
+    
+    ## Required inputs
+    `bug_report` and `failing_test` non-empty. `suspected_paths` may be empty.
+    
+    ## Output format
+    {"patch": "unified diff", "touched_paths": ["src/services/billing_service.py"], "rationale": "1-3 sentences explaining root cause and fix", "confidence": 0.0}
+    
+    ## Quality criteria
+    Passes if: regression test now passes; all prior tests green; no API/DB contract drift; diff scoped to root-cause file(s); no `time.sleep` hack; no broadened `except`; no test file altered.
+    Fails if: modifies the failing test; swallows exceptions; changes status codes to mask 500s; alters response schema; alters DB schema; mixes refactor with fix.
+    
+    ## Common pitfalls
+    - `except Exception: return {"ok": True}`. Masking, not fixing.
+    - Adding a retry loop around a deterministic failure. Hides the cause.
+    - Changing the test fixture so the bug is no longer exercised.
+    
+    ## Examples
+    Python fix for off-by-one pagination:
+    ```python
+    # before
+    return items[offset : offset + limit + 1]      # extra item leaked into page
+    # after
+    return items[offset : offset + limit]
+    ```
+    
+    Anti-pattern (masking):
+    ```python
+    # before: raises KeyError when 'email' missing
+    return payload["email"].lower()
+    # "fix":
+    try: return payload["email"].lower()
+    except Exception: return ""                    # silent data loss
+    # proper fix: validate at the edge with the request schema; raise 422 if missing.
+    ```
     
     ## Stop condition
+    `failing_test` passes; full backend suite passes; OpenAPI/DB diffs empty; `touched_paths` is the smallest set required.
     
-    `failing_test` passes; all previously-green tests remain green.
+    ## Confidence guidance
+    Lower when: root cause uncertain (≤0.7), failure not reproduced locally (≤0.6), fix touches a shared service (≤0.8), test flake suspected (≤0.7), concurrency involved (≤0.7). Floor 0.85 to proceed.
 
 ### Skill: implement-data-model
 
     
     # Skill: implement-data-model
     
-    ## Task
+    ## Purpose
+    Define one persistence model (ORM entity, struct, schema class) for a single domain object. No queries, no migration generation, no business logic — just the field/relation declarations the ORM needs.
     
-    Define one persistence model (ORM entity, schema, struct). No queries,
-    no migrations — those are separate skills.
+    ## When to invoke
+    Invoke when the plan step is implement a data model AND `fields_schema` is non-empty AND the project already has a configured ORM/driver. Reject if there is no ORM scaffolded — that is a separate plan step. Reject if the model already exists — use `refactor-backend` or `implement-migration`.
+    
+    ## Procedure (follow exactly)
+    1. Locate the project's models directory (e.g. `src/models/`, `app/db/models/`). Reuse it.
+    2. Use the project's existing ORM idiom: SQLAlchemy `Mapped[...]`, Django Model, Prisma schema entry, ActiveRecord class, sqlx struct. Do not introduce a new ORM.
+    3. For each field in `fields_schema`:
+       - Declare type matching the DB driver's native type.
+       - `nullable`, `default`, and `constraints` (unique, check) declared at column level, not via custom validators.
+       - Timestamps: use the project's existing convention (TimestampMixin, `default=func.now()`).
+    4. For each entry in `relations`: declare the relationship using the ORM's idiom (`relationship()`, `ForeignKey`, `belongs_to`); set `on_delete` exactly as specified.
+    5. Register the model in the project's model registry if one exists (e.g. import in `models/__init__.py`).
+    6. Do NOT write queries, repository methods, or a migration. Migrations belong to `implement-migration` (which auto-generates from this model).
+    7. Run the paired unit test that imports the model, instantiates a row in-memory, and validates field constraints.
+    
+    ## How to think
+    - Field type unmappable in the DB (e.g. arbitrary JSON in MySQL) → STOP and ask human.
+    - Polymorphic association requested → reuse the project's existing pattern; if none exists, STOP and ask.
+    - Soft-delete needed → reuse the project's mixin; do not invent one.
+    
+    ## Required inputs
+    `model_name` and `fields_schema` non-empty. `relations` may be empty.
+    
+    ## Output format
+    {"patch": "unified diff", "touched_paths": ["src/models/user.py", "tests/models/test_user.py"], "rationale": "1-3 sentences", "confidence": 0.0}
+    
+    ## Quality criteria
+    Passes if: model loads under the ORM; field types match `fields_schema` exactly; constraints declared at column level; no query/repository code; relation `on_delete` correct.
+    Fails if: introduces a new ORM; writes queries; auto-runs a migration; adds business logic; declares fields outside the schema.
+    
+    ## Common pitfalls
+    - Adding `def full_name(self): ...` business properties. Those belong in services or view models.
+    - Forgetting `nullable=False` on required fields. Declare it explicitly.
+    - Wiring `on_delete=CASCADE` because it "feels right" rather than what the TSD says.
+    
+    ## Examples
+    SQLAlchemy 2.x:
+    ```python
+    class User(Base, TimestampMixin):
+        __tablename__ = "users"
+        id: Mapped[int] = mapped_column(primary_key=True)
+        email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+        display_name: Mapped[str] = mapped_column(String(80), nullable=False)
+        org_id: Mapped[int] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"))
+        org: Mapped["Org"] = relationship(back_populates="users")
+    ```
+    
+    Anti-pattern:
+    ```python
+    class User(Base):
+        __tablename__ = "users"
+        id = Column(Integer, primary_key=True)
+        data = Column(JSON)                          # everything stuffed into JSON
+        def get_email(self):                         # business logic on the model
+            return self.data["email"]
+    ```
     
     ## Stop condition
+    Model file exists; imports cleanly; unit test validates field constraints; no query/migration code added; `touched_paths` minimal.
     
-    Model loads with the ORM/driver and validates against its declared
-    schema in the paired unit test.
+    ## Confidence guidance
+    Lower when: field types ambiguous (≤0.75), relation semantics unclear (≤0.7), ORM idiom unfamiliar (≤0.8), TSD silent on cascade (≤0.7). Floor 0.85 to proceed.
 
 ### Skill: implement-endpoint
 
     
     # Skill: implement-endpoint
     
-    ## Task
+    ## Purpose
+    Add one HTTP endpoint that wires a route to the existing server, validates the request via the framework's native validator, delegates business logic to a service, and returns a response that exactly conforms to the declared schema.
     
-    Add one HTTP endpoint matching the schemas. Validate the request, return
-    the response, reject malformed input. Wire via the framework's idiomatic
-    router. No business logic inline — call into `implement-service`.
+    ## When to invoke
+    Invoke when the plan step says implement an endpoint AND the TSD's API contract for it is non-empty AND a paired integration-test step exists.
+    Do NOT invoke to: modify an existing endpoint (use `refactor-backend`), add middleware globally, or add business logic (`implement-service`).
+    
+    ## Procedure (follow exactly)
+    1. Read the TSD API contract for this endpoint. If anything is ambiguous (status code without body, undefined auth), STOP and lower confidence — do not guess.
+    2. Locate the existing router file. Reuse it; never create a new one.
+    3. Author the handler:
+       a. Bind path + query + body via the framework's native validator (Pydantic / Zod / Joi / ActiveModel — match what's already used).
+       b. On validation failure, return the matching 4xx from the error model — never invent error shapes.
+       c. On valid input, call into the service layer. Never inline I/O.
+       d. Translate service errors to status codes per the error model.
+    4. Register the handler using the framework's idiomatic decorator.
+    5. Run the paired integration test. If it fails, fix the handler, never the test.
+    
+    ## How to think
+    - Validation framework can't express (cross-field rules) → custom validator in SAME file.
+    - 200 vs 201 ambiguous in the TSD → STOP and ask human.
+    - Auth needed → reuse the project's existing dependency, never roll your own.
+    
+    ## Required inputs
+    All five fields non-empty. If route or method conflicts with existing endpoint, STOP and ask human.
+    
+    ## Output format
+    {"patch": "unified diff", "touched_paths": ["src/api/routes/users.py", "tests/api/test_users.py"], "rationale": "1-3 sentences", "confidence": 0.0}
+    
+    ## Quality criteria
+    Passes if: every status code reachable; no direct I/O; zero new deps; no dead branches; paired test passes.
+    Fails if: broad except; 200 with error payload; inline business logic; mutates global state; touches files outside touched_paths.
+    
+    ## Common pitfalls
+    - Catching `Exception` broadly. Catch only what you can recover from.
+    - Mixing layers. Do not import DB models in the handler.
+    - Logging in handlers. Logging belongs in services.
+    
+    ## Examples
+    FastAPI:
+    ```python
+    @router.post("/users", status_code=201, response_model=UserOut)
+    async def create_user(payload: UserCreate, svc: UserService = Depends()):
+        try: user = await svc.create(payload)
+        except DuplicateUserError: raise HTTPException(409, "user exists")
+        return UserOut.from_orm(user)
+    ```
+    
+    Anti-pattern:
+    ```python
+    async def create_user(payload: dict):       # no validation
+        db = SessionLocal()                     # I/O in handler
+        db.add(User(**payload)); db.commit()    # bypass service
+        return {"ok": True}                     # invented shape
+    ```
     
     ## Stop condition
+    Handler exists; paired test asserts every status code; test passes; no file outside `touched_paths` modified.
     
-    Endpoint reachable from the framework test client; paired integration
-    test asserts every status code in the schema.
+    ## Confidence guidance
+    Lower when: TSD ambiguous (≤0.7), endpoint conflicts (≤0.6), idiom unclear (≤0.75), new file (≤0.8). Floor 0.85 to proceed.
 
 ### Skill: implement-migration
 
     
     # Skill: implement-migration
     
-    ## Task
+    ## Purpose
+    Author one forward + reverse database migration using the project's existing migration tool. Migrations are sensitive: this skill emits the file but always sets `human_gate: true`; the harness must not auto-apply.
     
-    Author one forward + reverse migration via the project's migration tool
-    (Alembic, Flyway, Prisma Migrate, ActiveRecord, etc.). Always human-gated.
+    ## When to invoke
+    Invoke when the plan step is implement a migration AND the paired data-model change (if any) is already merged or in the same patch AND the project already has a migration tool configured. Reject if `down_sql_or_ops` is empty — irreversible migrations require explicit human override.
+    
+    ## Procedure (follow exactly)
+    1. Identify the migration tool: Alembic (Python), Prisma Migrate, ActiveRecord, Flyway, Goose, sqlx-cli, Knex. Reuse it; do not introduce a new tool.
+    2. Generate a new migration file via the tool's CLI so the timestamp/sequence is correct:
+       - alembic → `alembic revision -m "<description>" --autogenerate` (or non-autogenerate if ops are explicit).
+       - prisma → `prisma migrate dev --name <description> --create-only`.
+       - rails → `bin/rails generate migration <CamelCaseDescription>`.
+       - flyway → create `V<n>__<description>.sql` following project numbering.
+    3. Populate `up` from `up_sql_or_ops`. Populate `down` from `down_sql_or_ops`. Both must be present and symmetric.
+    4. For destructive ops (DROP, ALTER TYPE narrow, NOT NULL added to existing column): include an explicit safeguard comment and require human approval — never silently destructive.
+    5. For data backfills: do them in a separate migration after the schema change, never mix.
+    6. Round-trip locally: `migrate up` then `migrate down` then `migrate up` on a throwaway DB. All three must succeed.
+    7. Set `human_gate: true` in output. Do not run apply against shared environments.
+    
+    ## How to think
+    - Adding NOT NULL to an existing column → require backfill migration first; STOP if no backfill present.
+    - Renaming a column with live readers → split into add-new + dual-write + drop-old across releases; do not do it in one step.
+    - Autogen diff includes unrelated changes → STOP and ask human; do not commit a noisy migration.
+    
+    ## Required inputs
+    All four fields non-empty. `down_sql_or_ops` must fully undo `up_sql_or_ops`.
+    
+    ## Output format
+    {"patch": "unified diff", "touched_paths": ["migrations/2026_05_19_add_users_table.py"], "migration_path": "migrations/2026_05_19_add_users_table.py", "rationale": "1-3 sentences", "confidence": 0.0, "human_gate": true}
+    
+    ## Quality criteria
+    Passes if: file created via tool CLI with correct ordering; up/down round-trips cleanly on a throwaway DB; no data + schema mixed in one migration; destructive ops flagged.
+    Fails if: irreversible without explicit override; hand-authored filename with wrong sequence; autogen diff includes unrelated tables; `human_gate` not set.
+    
+    ## Common pitfalls
+    - Editing an already-applied migration. Forbidden — create a new one.
+    - Mixing schema and backfill. Split into two migrations.
+    - Adding `op.execute("UPDATE ...")` for a large table without batching. Will lock prod.
+    
+    ## Examples
+    Alembic:
+    ```python
+    """add users table"""
+    def upgrade():
+        op.create_table("users",
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column("email", sa.String(255), nullable=False, unique=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        )
+    
+    def downgrade():
+        op.drop_table("users")
+    ```
+    
+    Anti-pattern:
+    ```python
+    def upgrade():
+        op.drop_column("users", "email")              # destructive, no down
+    def downgrade():
+        pass                                          # NOT a real reversal
+    ```
     
     ## Stop condition
+    Migration file present at `migration_path`; up→down→up round-trip green on throwaway DB; `human_gate: true` emitted; no other tables modified.
     
-    `up` then `down` round-trips cleanly against a throwaway database.
+    ## Confidence guidance
+    Lower when: destructive (≤0.7), data + schema mixed (≤0.6), large-table backfill (≤0.7), autogen noisy (≤0.6), tool unfamiliar (≤0.75). Floor 0.85 to proceed.
 
 ### Skill: implement-service
 
     
     # Skill: implement-service
     
-    ## Task
+    ## Purpose
+    Write one service class/module containing the business logic for a domain object. The service must depend only on injected repository/client interfaces — no HTTP, no SQL, no direct I/O — so it is unit-testable with mocks.
     
-    Write one service class/module containing business logic for `service_name`.
-    No HTTP, no SQL — depend on injected repositories/clients.
+    ## When to invoke
+    Invoke when the plan step is implement a service AND `method_specs` is non-empty AND every dependency interface already exists (or is part of the same plan as an earlier step). Reject if the spec contains HTTP or SQL — those belong in endpoints or repositories.
+    
+    ## Procedure (follow exactly)
+    1. Locate the project's services directory (e.g. `src/services/`, `app/services/`). Reuse the directory; do not create a parallel structure.
+    2. Define the service as the framework idiom: class with constructor injection (NestJS, Spring), dataclass + DI container (FastAPI Depends), plain module of pure functions (Go, Rust). Match what's already in use.
+    3. For each entry in `method_specs`:
+       a. Type the signature exactly per `params` and `returns`.
+       b. Implement using only injected dependencies. Never call `requests`, `fetch`, `db.execute` directly.
+       c. Raise domain errors from the project's existing error module — do not invent new exception types unless `errors` declares one not present.
+       d. Keep the function focused; complex orchestration across methods → split into private helpers in the same module.
+    4. Do not log inside pure methods; if logging required, use the project's injected logger.
+    5. Run paired unit tests that mock every dependency and assert behavior per `behavior_summary`.
+    
+    ## How to think
+    - A method needs a transaction → take a UnitOfWork dependency, do not start one directly.
+    - Cross-service call → inject the other service; do not import its repository.
+    - Method spec ambiguous on error semantics → STOP and ask human.
+    
+    ## Required inputs
+    All three fields non-empty. Every `dependencies` entry must resolve to an existing interface or be declared in the same plan.
+    
+    ## Output format
+    {"patch": "unified diff", "touched_paths": ["src/services/user_service.py", "tests/services/test_user_service.py"], "rationale": "1-3 sentences", "confidence": 0.0}
+    
+    ## Quality criteria
+    Passes if: no I/O imports (`requests`, `httpx`, `sqlalchemy`, `psycopg`) in the file; every method has a mock-based unit test; errors come from the project error module; signatures match spec exactly.
+    Fails if: direct DB/HTTP calls; mutates global state; logs without injected logger; introduces a dependency outside `dependencies`.
+    
+    ## Common pitfalls
+    - Importing the ORM Session and calling it. That's the repository's job.
+    - Catching all exceptions and re-raising as `RuntimeError`. Be specific.
+    - Putting validation in the service that belongs in the request schema. Validate at the edge.
+    
+    ## Examples
+    Python service with injected repository:
+    ```python
+    class UserService:
+        def __init__(self, repo: UserRepository, clock: Clock):
+            self.repo = repo
+            self.clock = clock
+    
+        async def create(self, payload: UserCreate) -> User:
+            if await self.repo.exists_by_email(payload.email):
+                raise DuplicateUserError(payload.email)
+            return await self.repo.insert(User(**payload.dict(), created_at=self.clock.now()))
+    ```
+    
+    Anti-pattern:
+    ```python
+    class UserService:
+        async def create(self, payload):
+            async with httpx.AsyncClient() as c:                          # HTTP in service
+                await c.post("http://billing/charge", json={...})
+            engine.execute("INSERT INTO users VALUES (...)")              # SQL in service
+    ```
     
     ## Stop condition
+    Service module exists; every method has a passing unit test with mocked dependencies; no I/O imports present; `touched_paths` minimal.
     
-    Each method has a passing unit test that mocks its dependencies.
+    ## Confidence guidance
+    Lower when: spec ambiguous (≤0.7), dependencies missing (≤0.6), error semantics unclear (≤0.75), framework DI idiom unfamiliar (≤0.8). Floor 0.85 to proceed.
 
 ### Skill: refactor-backend
 
     
     # Skill: refactor-backend
     
-    ## Task
+    ## Purpose
+    Apply a behavior-preserving change to server-tier code. The public API surface (HTTP routes, request/response schemas, DB schema, message contracts) must be byte-identical before and after.
     
-    Behaviour-preserving change limited to server-tier paths. Public API
-    surface (HTTP routes + request/response schemas) must not change.
+    ## When to invoke
+    Invoke when the plan step is refactor and `target_paths` are all under server tier (routes/, services/, repositories/, models/, infra/) AND integration tests cover every touched endpoint. Reject if any target is UI-tier, if any test is currently red, or if `invariants` is empty.
     
-    ## Do NOT
+    ## Procedure (follow exactly)
+    1. Confirm every path in `target_paths` is server-tier. If any UI file, STOP.
+    2. Run the full integration test + contract test suite. Capture baseline. If anything is red before changes, STOP — refactoring a red tree is forbidden.
+    3. Apply the smallest change that achieves `refactor_goal`. Allowed examples:
+       - Extract repository from a service that held SQL inline.
+       - Split a fat service into two by domain seam.
+       - Rename an internal helper.
+       - Reorganize files under a directory without changing imports outside the package.
+    4. Forbidden: changing endpoint URLs, HTTP methods, request/response schemas, status codes, DB column names/types, message-bus topics, or env-var names. If any of those would change, STOP — that is a breaking change.
+    5. Re-run all tests. Diff in HTTP/contract tests must be zero.
+    6. Do not bump dependencies, do not add libraries, do not "modernize" unrelated code.
     
-    - Change endpoint URLs, methods, or schemas.
-    - Touch UI-tier files.
-    - Add libraries.
+    ## How to think
+    - Refactor goal vague ("clean up") → STOP and ask for a concrete invariant.
+    - Tempted to also fix a nearby bug → don't; emit a follow-up `fix-backend-bug` step.
+    - Touching a model file → ensure NO column rename leaks to the DB — those need migrations.
+    
+    ## Required inputs
+    All three fields non-empty. `invariants` must include at minimum "HTTP contract unchanged" and "DB schema unchanged".
+    
+    ## Output format
+    {"patch": "unified diff", "touched_paths": ["src/services/user_service.py", "src/repositories/user_repo.py"], "rationale": "1-3 sentences", "confidence": 0.0}
+    
+    ## Quality criteria
+    Passes if: every integration/contract test still green; OpenAPI/JSON schema diff is empty; DB schema diff is empty; no new dependency; no UI-tier file touched.
+    Fails if: alters request/response shape; alters status codes; renames a DB column without migration; adds a library; reformats whole files.
+    
+    ## Common pitfalls
+    - Renaming a Pydantic field "for clarity" — that changes the response shape. Forbidden.
+    - Replacing the HTTP client with `httpx` because it's "nicer". New dependency, forbidden.
+    - Inlining a service back into a handler. Layer violation.
+    
+    ## Examples
+    Extract repository:
+    ```python
+    # before: UserService had session + SELECT inline
+    # after:
+    class UserRepository:
+        def __init__(self, session: AsyncSession): self.session = session
+        async def by_email(self, email: str) -> User | None:
+            return (await self.session.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    
+    class UserService:
+        def __init__(self, repo: UserRepository): self.repo = repo
+        async def get_by_email(self, email): return await self.repo.by_email(email)
+    ```
+    
+    Anti-pattern:
+    ```python
+    # "refactor" that renames a JSON response field — breaking
+    class UserOut(BaseModel):
+        displayName: str    # was `display_name` — wire contract changed
+    ```
+    
+    ## Stop condition
+    All tests green; OpenAPI diff empty; DB schema diff empty; `touched_paths` ⊆ `target_paths` (plus any new repository file under the existing package).
+    
+    ## Confidence guidance
+    Lower when: test coverage thin (≤0.7), goal vague (≤0.7), seam unclear (≤0.75), contract tests missing (≤0.6). Floor 0.85 to proceed.
 
 ### Skill: scaffold-backend
 
     
     # Skill: scaffold-backend
     
-    ## Task
+    ## Purpose
+    Create the minimal server-tier directory layout using the framework's official init tool exactly once. Produce a runnable server with a working `/healthz` (or framework-default health) endpoint.
     
-    Create the minimal server-tier layout using the framework's official
-    init tool (`fastapi`, `nest new`, `rails new`, `cargo new`, `go mod init`,
-    etc.). Do not hand-author boilerplate.
+    ## When to invoke
+    Invoke when the plan step is `scaffold-backend` AND `target_dir` is empty or absent AND the TSD names the framework. Reject if `target_dir` already contains a framework manifest (`pyproject.toml`, `package.json` with framework dep, `Gemfile`, `go.mod`, `Cargo.toml`).
+    
+    ## Procedure (follow exactly)
+    1. Verify `target_dir` is empty. If not, STOP and ask human.
+    2. Run the framework's official scaffolder:
+       - fastapi → `poetry new <dir> && poetry add fastapi uvicorn[standard]` + minimal `main.py` from the official quickstart (copy verbatim, do not embellish).
+       - nest → `npx -p @nestjs/cli nest new <dir> --package-manager <pm>`
+       - express → `npx express-generator <dir>` (or `pnpm create express`).
+       - rails → `rails new <dir> --api`
+       - spring → `curl https://start.spring.io/starter.tgz -d ... | tar -xz -C <dir>`
+       - go-chi → `go mod init` + add chi, copy official skeleton.
+       - axum → `cargo new <dir> --bin && cargo add axum tokio`
+    3. Add a single `/healthz` route returning `{"status":"ok"}` if the scaffolder did not. Use the framework's idiomatic style.
+    4. Install dependencies with the requested package manager. Do not switch managers.
+    5. Verify the server starts and `GET /healthz` returns 200.
+    6. Do NOT add: database driver, auth library, ORM, logger config — those are separate plan steps.
+    
+    ## How to think
+    - Framework not in the list above → STOP and ask human.
+    - Scaffolder generates extra (mailers, sockets) the TSD didn't ask for → leave it; do not prune now.
+    - Monorepo → place under workspace glob; root manifest only updated by the scaffolder.
+    
+    ## Required inputs
+    All three fields non-empty. `framework` must match TSD literally.
+    
+    ## Output format
+    {"patch": "unified diff of created files", "touched_paths": ["services/api/pyproject.toml", "services/api/app/main.py", ...], "rationale": "1-3 sentences", "confidence": 0.0}
+    
+    ## Quality criteria
+    Passes if: scaffolder ran cleanly; `/healthz` returns 200; lint passes on generated code; only files generated by the scaffolder + the healthz handler are present.
+    Fails if: hand-authored boilerplate; mixed package managers; added DB/auth/ORM; modified files outside `target_dir`.
+    
+    ## Common pitfalls
+    - Hand-writing `main.py` "because the quickstart is too verbose". Copy verbatim.
+    - Adding SQLAlchemy/Prisma here. That's `implement-data-model`.
+    - Committing virtualenv / node_modules.
+    
+    ## Examples
+    FastAPI:
+    ```python
+    # services/api/app/main.py — taken from official quickstart
+    from fastapi import FastAPI
+    app = FastAPI()
+    
+    @app.get("/healthz")
+    def healthz(): return {"status": "ok"}
+    ```
+    
+    Anti-pattern:
+    ```python
+    # hand-authored "framework lite"
+    from http.server import BaseHTTPRequestHandler, HTTPServer   # not the framework named in TSD
+    ```
     
     ## Stop condition
+    Server starts via the framework's documented command; `GET /healthz` → 200; `touched_paths` matches scaffolder output plus the healthz handler.
     
-    `<framework> run` starts a healthcheck endpoint successfully.
+    ## Confidence guidance
+    Lower when: framework ambiguous in TSD (≤0.75), monorepo layout uncertain (≤0.8), unfamiliar framework (≤0.7), scaffolder flags non-default (≤0.8). Floor 0.85 to proceed.
 
 ### Skill: build-artifact
 
     
     # Skill: build-artifact
     
-    ## Task
+    ## Purpose
+    Run the project's native build to produce a single artifact of `target`
+    kind, tagged with `version`, and emit a verifiable digest.
     
-    Run the stack's native build command. Emit the artifact path.
+    ## When to invoke
+    Plan step is `build` OR a deploy pipeline step requires a fresh artifact.
+    Run after `lint-check`, `code-review`, and `dependency-audit` succeed.
+    
+    ## Procedure (follow exactly)
+    1. Detect build tool by repo conventions and `target`:
+       - container → `docker build -t <name>:<version> .` (or `buildah bud`).
+       - wheel → `python -m build --wheel` or `poetry build -f wheel`.
+       - tarball → `python -m build --sdist` or `npm pack`.
+       - jar → `mvn package -DskipTests=false` or `gradle build`.
+       - binary → `cargo build --release` / `go build -o ./bin/<name>`.
+       - static → `npm run build` / `yarn build` / `pnpm build` per scripts.
+    2. Pass `build_args` through tool-native flags (e.g. `--build-arg`).
+    3. Verify artifact exists at expected path; compute sha256 (`sha256sum` or
+       tool's own digest for registries).
+    4. Do NOT push to a registry from this skill; pushing is a separate deploy
+       step. Container builds stay local unless pipeline policy says otherwise.
+    5. Surface tool warnings; fail loudly if exit code ≠ 0.
+    
+    ## How to think
+    - Reproducible build flags (e.g. `SOURCE_DATE_EPOCH`) — honour repo
+      conventions; do not invent them.
+    - Multi-arch container → only if pipeline configures buildx; otherwise host
+      arch only.
+    - Test step embedded in build (mvn) — let it run; do not skip without
+      explicit override.
+    - Dirty git tree → record in metadata; do not block unless policy says so.
+    
+    ## Required inputs
+    `target`, `repo_root`, `version` non-empty. If build tool is missing, STOP
+    and signal toolchain gap.
+    
+    ## Output format
+    ```json
+    {
+      "artifact_path": "dist/myapp-1.4.0-py3-none-any.whl",
+      "digest": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "tool_used": "poetry",
+      "confidence": 0.94
+    }
+    ```
+    
+    ## Quality criteria
+    Pass: artifact exists; digest matches file; version embedded in artifact
+    name; build exit code 0; touched_paths confined to build output dir.
+    Fail: missing digest, wrong version tag, leaving partial artifacts behind,
+    suppressing non-zero exit code.
+    
+    ## Common pitfalls
+    - Running `docker build` without `--pull` and silently using stale base
+      image — pass `--pull` if pipeline policy requires fresh base.
+    - Building from dirty workdir without recording git sha.
+    - Re-tagging a stale artifact instead of rebuilding.
+    - Forgetting to clean `dist/` before sdist/wheel builds, mixing versions.
+    
+    ## Examples
+    ✅ `docker build -t myapp:1.4.0 .` → digest
+    `sha256:abc…`, artifact_path `myapp:1.4.0`, tool_used `docker`.
+    ❌ `artifact_path: "dist/myapp.whl"` with no version in filename, no digest.
+    
+    ## Stop condition
+    Build exited 0; artifact exists and is digestable; metadata recorded;
+    nothing outside expected build output modified.
+    
+    ## Confidence guidance
+    Standard build path, clean tree, exit 0 ≥0.95; dirty tree or warnings
+    ≥0.85; unfamiliar toolchain ≤0.75. Floor 0.85.
 
 ### Skill: configure-ci
 
     
     # Skill: configure-ci
     
-    ## Task
+    ## Purpose
+    Author or update CI configuration for the detected system with the
+    requested jobs. Human-gated: deploy jobs are scaffolded with `environment:`
+    protection and manual approval where the CI system supports it.
     
-    Author / update the CI pipeline definition for the detected CI system.
-    Each job is one of: install, lint, test, build, deploy. This skill is
-    human-gated by default.
+    ## When to invoke
+    Plan step is `configure-ci` OR CI config is missing/outdated AND the repo
+    has executable test/build commands. Do NOT invoke to push pipeline
+    secrets — that is out of scope.
+    
+    ## Procedure (follow exactly)
+    1. Locate the canonical CI file for `ci_system`:
+       - github-actions → `.github/workflows/ci.yml`
+       - gitlab-ci → `.gitlab-ci.yml`
+       - circleci → `.circleci/config.yml`
+       - buildkite → `.buildkite/pipeline.yml`
+       - jenkins → `Jenkinsfile`
+    2. If a file exists, preserve unrelated jobs and merge in changes; do not
+       wholesale rewrite.
+    3. For each requested job, emit a stage with native commands for `language`
+       (e.g. python → `pip install -r requirements.txt`, `ruff check .`,
+       `pytest -q`). Reuse repo's npm/poetry/make scripts when present.
+    4. `deploy` jobs MUST:
+       - Be gated on the main branch only (`if: github.ref == 'refs/heads/main'`
+         or equivalent).
+       - Use environment protection requiring manual approval for prod.
+       - Reference secrets via `${{ secrets.X }}` syntax; never inline.
+    5. Validate YAML/JSON syntax before emitting.
+    
+    ## How to think
+    - Existing CI uses a matrix → preserve it; add jobs inside the matrix only
+      if appropriate.
+    - Self-hosted vs hosted runners → respect existing `runs-on` choice.
+    - Reusable workflows / templates already in use → call them, don't
+      duplicate.
+    - Conflicting job names → suffix new jobs rather than overwrite.
+    
+    ## Required inputs
+    All four non-empty. If `ci_system` doesn't match repo evidence, STOP and
+    ask — do not auto-migrate between CI systems.
+    
+    ## Output format
+    ```json
+    {
+      "ci_config_path": ".github/workflows/ci.yml",
+      "touched_paths": [".github/workflows/ci.yml"],
+      "rationale": "Added lint and test jobs running on ubuntu-latest with Python 3.12; deploy job gated on main and prod environment.",
+      "confidence": 0.9
+    }
+    ```
+    
+    Example GitHub Actions snippet emitted:
+    ```yaml
+    jobs:
+      test:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-python@v5
+            with: { python-version: "3.12" }
+          - run: pip install -e ".[dev]"
+          - run: ruff check .
+          - run: pytest -q
+      deploy:
+        needs: test
+        if: github.ref == 'refs/heads/main'
+        environment: production
+        runs-on: ubuntu-latest
+        steps:
+          - run: ./scripts/deploy.sh
+    ```
+    
+    ## Quality criteria
+    Pass: file parses; requested jobs present; deploy gated; secrets via refs
+    only; no unrelated jobs deleted.
+    Fail: inline secrets, missing `environment:` on prod deploy, deleted jobs,
+    broken YAML, wrong runner for repo.
+    
+    ## Common pitfalls
+    - Pinning actions to `@main` instead of a tagged version.
+    - Forgetting `actions/checkout` step.
+    - Caching wrong paths (`~/.cache/pip` vs `~/.cache/pypoetry`).
+    - Adding deploy job that runs on every push.
+    
+    ## Examples
+    ✅ See snippet above.
+    ❌ `deploy:\n  steps:\n    - run: aws s3 cp ... --secret-key ABCD1234` —
+    inlined secret and no gating.
+    
+    ## Stop condition
+    File written and YAML-parses; jobs match request; deploy is gated; secrets
+    are references only.
+    
+    ## Confidence guidance
+    Existing config + small additive change ≥0.92; new file from scratch on
+    familiar CI ≥0.88; unfamiliar CI system ≤0.75 (escalate). Floor 0.85.
 
 ### Skill: deploy-environment
 
     
     # Skill: deploy-environment
     
-    ## Task
+    ## Purpose
+    Promote a pre-built artifact to `environment` using a defined strategy.
+    Always emit a `rollback_ref` to the previous release. Prod is ALWAYS
+    human-gated.
     
-    Promote the artifact to `environment`. Production is always human-gated.
-    Emit the new `release_id` and a `rollback_ref` to the previous release.
+    ## When to invoke
+    Plan step is `deploy` AND artifact exists AND (for prod) approval_token
+    present. Run after `build-artifact`, `security-scan`, `secret-scan`,
+    `dependency-audit` succeed.
+    
+    ## Procedure (follow exactly)
+    1. Verify `artifact_path` exists / is reachable. Compute or read its digest.
+    2. Verify `environment` matches a known deployment target in repo config
+       (helm values, terraform workspace, etc.). Unknown → STOP.
+    3. For prod: require `approval_token`. Missing or expired → STOP.
+    4. Record current release id as `rollback_ref` BEFORE deploying:
+       - kubectl → `kubectl rollout history deployment/<name> -o json`
+       - helm → `helm history <release>`
+       - ecs → `aws ecs describe-services` → current taskDefinition arn
+       - fly → `flyctl releases`
+    5. Apply strategy:
+       - rolling → tool default (e.g. `kubectl set image`, `helm upgrade`).
+       - blue-green → spin new colour, smoke test, switch traffic.
+       - canary → release to weighted subset; pause for metric window before
+         completing (orchestrator/human decides completion).
+       - recreate → only with explicit acknowledgement of downtime.
+    6. Wait for readiness:
+       - kubectl → `kubectl rollout status` with bounded timeout.
+       - helm → `--wait --timeout` flag.
+    7. Smoke-check health endpoint if defined (e.g. `/healthz` returns 200).
+    8. Emit `release_id` and `rollback_ref`.
+    
+    ## How to think
+    - Strategy not supported by target → STOP, do not silently downgrade.
+    - Mid-deploy failure → do NOT auto-rollback from this skill; signal
+      failure with `release_id` partial and let `rollback` skill handle it.
+    - Pending migrations → confirm `run-migration` succeeded first; STOP if
+      unknown.
+    - Config drift detected → flag in output, do not "fix" it here.
+    
+    ## Required inputs
+    All inputs non-empty for prod; `approval_token` optional for dev. If
+    strategy is `canary` ensure traffic-shifting infra exists (mesh, ingress).
+    
+    ## Output format
+    ```json
+    {
+      "release_id": "myapp-2026-05-19-1430",
+      "rollback_ref": "myapp-2026-05-18-2210",
+      "tool_used": "helm",
+      "confidence": 0.97
+    }
+    ```
+    
+    ## Quality criteria
+    Pass: rollback_ref captured before apply; readiness verified; health check
+    passed; release_id stable and unique; approval recorded for prod.
+    Fail: missing rollback_ref, skipping readiness wait, deploying to prod
+    without approval, swallowing tool errors.
+    
+    ## Common pitfalls
+    - Tagging an artifact at deploy time instead of using the built digest.
+    - Using `latest` tag in prod manifests — refuse and STOP.
+    - Forgetting to scale up canary fully or leaving it half-promoted.
+    - Confusing "deployment created" with "deployment healthy".
+    
+    ## Examples
+    ✅ `helm upgrade myapp ./chart --set image.tag=1.4.0 --wait` →
+    release_id `myapp.v23`, rollback_ref `myapp.v22`.
+    ❌ `kubectl apply -f manifest.yaml` returning success while pods are still
+    CrashLoopBackOff — readiness not verified.
+    
+    ## Stop condition
+    Release applied; readiness confirmed; health endpoint OK; release_id and
+    rollback_ref recorded; for prod, approval token logged.
+    
+    ## Confidence guidance
+    Dev rolling deploy succeeded ≥0.97; staging ≥0.95; prod requires
+    approval, readiness, and health-check all green to reach 0.95. Floor 0.95.
 
 ### Skill: rollback
 
     
     # Skill: rollback
     
-    ## Task
+    ## Purpose
+    Restore `environment` to a known-good `rollback_ref`. ALWAYS human-gated.
+    ALWAYS records reason for audit trail.
     
-    Roll back `environment` to `rollback_ref`. ALWAYS human-gated. Emit the
-    restored release id.
+    ## When to invoke
+    Plan step is `rollback` OR an active incident requires reverting a recent
+    deploy. `rollback_ref` MUST come from a prior `deploy-environment` output.
+    
+    ## Procedure (follow exactly)
+    1. Verify `approval_token` is present and valid for `environment`. Missing
+       for prod → STOP.
+    2. Verify `rollback_ref` exists in the deployment history of `environment`:
+       - kubectl → `kubectl rollout history deployment/<name>`
+       - helm → `helm history <release>`
+       - ecs → describe service revisions
+       - fly → `flyctl releases`
+       Not found → STOP.
+    3. Record currently active release as `prior_release_id`.
+    4. Execute rollback using native command:
+       - kubectl → `kubectl rollout undo deployment/<name> --to-revision=<n>`
+       - helm → `helm rollback <release> <revision>`
+       - ecs → update service to prior taskDefinition arn
+       - fly → `flyctl deploy --image <prior_image>` or `flyctl releases revert`
+    5. Wait for readiness (same checks as `deploy-environment`).
+    6. Run health check on `/healthz` (or configured endpoint).
+    7. If the failing deploy included a DB migration that is incompatible with
+       `rollback_ref`'s schema, STOP — do not roll back app code without first
+       reverting the migration via a separate explicit step.
+    8. Emit `restored_release_id`, `prior_release_id`, `tool_used`, and log
+       `reason`.
+    
+    ## How to think
+    - Rollback target older than retention window → STOP; image/manifest may
+      be unavailable.
+    - Multiple services involved in the incident → roll back each via separate
+      invocations; do not bundle.
+    - Config or secret change since `rollback_ref` → flag; rolling back code
+      without matching config may break.
+    - Schema migration was destructive (dropped columns) → STOP unless paired
+      rollback migration is approved.
+    
+    ## Required inputs
+    All four non-empty. `reason` ≥ 1 sentence — required for audit log.
+    
+    ## Output format
+    ```json
+    {
+      "restored_release_id": "myapp.v22",
+      "prior_release_id": "myapp.v23",
+      "tool_used": "helm",
+      "confidence": 0.97
+    }
+    ```
+    
+    ## Quality criteria
+    Pass: approval recorded; rollback_ref verified in history; readiness and
+    health green; both release ids recorded; reason logged.
+    Fail: rolling back across an incompatible migration, skipping readiness
+    check, missing approval for prod, ambiguous rollback_ref.
+    
+    ## Common pitfalls
+    - Assuming `helm rollback` reverts DB migrations — it does not.
+    - Picking the wrong revision number (off-by-one in history listings).
+    - Rolling back to a revision that referenced an image that has since been
+      garbage-collected from the registry.
+    - Forgetting to communicate the rollback (out of scope here, but flag it).
+    
+    ## Examples
+    ✅ `helm rollback myapp 22` → restored_release_id `myapp.v22`,
+    prior_release_id `myapp.v23`, reason logged.
+    ❌ `kubectl rollout undo` issued but readiness not verified; pods still
+    CrashLoopBackOff — should not return success.
+    
+    ## Stop condition
+    Approval verified; rollback_ref exists; rollback applied; readiness +
+    health green; release ids recorded; reason in audit log.
+    
+    ## Confidence guidance
+    Recent rollback_ref, no schema incompatibility, health green ≥0.97;
+    older ref or config drift ≤0.9 (escalate); prod without approval STOP.
+    Floor 0.95.
 
 ### Skill: run-migration
 
     
     # Skill: run-migration
     
-    ## Task
-    
+    ## Purpose
     Apply a database migration in `environment`. ALWAYS human-gated. ALWAYS
-    record the previous revision for rollback.
+    records the previous revision so `rollback` can restore.
+    
+    ## When to invoke
+    Plan step is `run-migration` AND human approval token present AND
+    `previous_revision` will be captured. Do NOT invoke as a side-effect of
+    `deploy-environment`; migrations are a separate, explicit step.
+    
+    ## Procedure (follow exactly)
+    1. Confirm human approval token for the target `environment`. Missing → STOP.
+    2. Identify migration tool by repo evidence and `migration_tool` input.
+       Mismatch → STOP.
+    3. Record current head revision:
+       - alembic → `alembic current`
+       - django → `python manage.py showmigrations --plan | tail`
+       - flyway → `flyway info`
+       - knex → `knex migrate:currentVersion`
+       - prisma → `prisma migrate status`
+    4. If `dry_run` is true: run the tool's plan/preview command (e.g.
+       `alembic upgrade head --sql`) and emit the SQL plan; do not apply.
+    5. If `dry_run` is false AND prior dry-run was reviewed AND approval token
+       is for `apply`: run upgrade command (`alembic upgrade head`,
+       `manage.py migrate`, `flyway migrate`, `knex migrate:latest`,
+       `prisma migrate deploy`).
+    6. Re-read head revision; verify it changed (or that migration was a no-op
+       and record that). Record `applied_revision` and `previous_revision`.
+    7. For prod: take a logical backup or snapshot reference BEFORE step 5 if
+       policy requires; record snapshot id in output metadata.
+    
+    ## How to think
+    - Destructive migration (DROP, ALTER … DROP COLUMN) → require explicit
+      human acknowledgement of data loss; STOP without it.
+    - Long-running migration → estimate from dry-run plan; chunk if tool
+      supports it; do not hold locks unattended.
+    - Out-of-order migration files → STOP, ask human.
+    - Multi-tenant DB → ensure migration runs per tenant if schema-per-tenant
+      pattern; do not assume.
+    
+    ## Required inputs
+    All four non-empty. `dry_run=false` requires recorded approval AND a
+    previously emitted dry-run plan for this same `migration_path`.
+    
+    ## Output format
+    ```json
+    {
+      "applied_revision": "9f2c1ab3d4e5",
+      "previous_revision": "7a1b8cd2e3f0",
+      "tool_used": "alembic",
+      "confidence": 0.97
+    }
+    ```
+    
+    ## Quality criteria
+    Pass: human approval recorded; previous_revision captured; dry-run plan
+    reviewed; new head matches expected; output includes rollback info.
+    Fail: applying without approval, skipping dry-run, missing
+    previous_revision, mixing environments.
+    
+    ## Common pitfalls
+    - Running migrations from a stale checkout (head differs from CI artifact).
+    - Mixing `--fake` and real migrations (django) without recording which.
+    - Forgetting that some tools auto-apply on app start — verify and disable
+      for controlled rollouts.
+    - Treating "no migrations to apply" as a failure — it's a valid no-op.
+    
+    ## Examples
+    ✅ `alembic upgrade head` after approved dry-run; applied_revision changes
+    from `7a1b8cd2e3f0` to `9f2c1ab3d4e5`, both recorded.
+    ❌ `manage.py migrate --fake` in prod without explicit human approval
+    flagged as a fake-only operation.
+    
+    ## Stop condition
+    Approval verified; previous_revision recorded; migration applied (or
+    dry-run plan emitted); new revision verified; rollback metadata present.
+    
+    ## Confidence guidance
+    Dev with dry-run reviewed ≥0.97; staging with approval ≥0.95; prod always
+    require explicit human approval token, otherwise STOP. Floor 0.95.
 
 ### Skill: audit-typography-scale
 
     
     # Skill: audit-typography-scale
     
-    ## Task
+    ## Purpose
+    Audit type system for readable measure, sufficient hierarchy via scale ratio, sanctioned font families, and proper line-height. Findings drive frontend fixes.
     
-    Audit type for measure, scale ratio, and font choice.
+    ## When to invoke
+    Invoke when `target_path` contains text styles (component with typography, global CSS, theme tokens).
+    Do NOT invoke to: pick fonts from scratch (designer's prerogative), validate icon-only UI, or audit non-text styles.
     
-    ## Checklist
+    ## Procedure (follow exactly)
+    1. Parse the file. Locate every text style declaration (font-size, line-height, font-family).
+    2. For each body-copy block, compute measure (characters per line at intended width). Flag (severity=error) any block outside 65-75ch.
+    3. Compute the type scale ratio between adjacent steps in the scale. Flag (severity=error) any ratio < 1.25.
+    4. Inspect font-family declarations. If Inter appears as primary, flag (severity=error). Preferred families: Geist, Outfit, Cabinet Grotesk, Satoshi.
+    5. Count distinct families. If >2, flag (severity=error).
+    6. For each body style, line-height < 1.5 → flag warn. For display, line-height > 1.2 → flag warn.
+    7. Every finding includes path, line, and a concrete `fix`.
+    8. `verdict = "pass"` iff zero error findings.
     
-    1. Body copy measure between 65–75ch. Flag any block outside.
-    2. Type scale ratio ≥ 1.25 (perfect fourth or larger). Flag flat scales.
-    3. Banned families: Inter. Prefer Geist / Outfit / Cabinet Grotesk /
-       Satoshi (taste-skill).
-    4. At most 2 families total (one display, one body).
-    5. Line-height ≥ 1.5 for body, ≤ 1.2 for display.
+    ## How to think
+    - Tailwind class `text-base` → resolve to actual rem/px before measuring.
+    - Measure varies with breakpoint → audit each breakpoint; flag the worst.
+    - Inter is loaded but unused → not a violation; only primary use counts.
+    - Three families incl. monospace for code → mono is exempt; count UI families only.
+    
+    ## Required inputs
+    `target_path` resolves and contains text styles. Empty or non-text file → STOP.
+    
+    ## Output format
+    ```json
+    {"findings":[
+      {"area":"type","severity":"error","path":"src/Article.tsx","line":18,
+       "msg":"body measure 92ch exceeds 75ch limit.",
+       "fix":"set max-width to `prose` (65ch) on `<article>` wrapper."}],
+     "verdict":"revise","confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every body block measure-checked; scale ratio verified; Inter detected and flagged when primary; family count enforced; line-height rules checked; fixes concrete with path+line.
+    Fails if: skipped a rule; vague fix; counted mono fonts toward the 2-family cap; verdict pass with error findings present.
+    
+    ## Common pitfalls
+    - Measuring at default browser width without considering responsive layout.
+    - Letting Inter pass because "it looks fine".
+    - Permitting a flat 1.125 scale ("major second") — forbidden.
+    - Treating display line-height of 1.5 as acceptable.
+    
+    ## Examples
+    ✅ Finding: error, line 22, msg "scale steps 16→18px ratio=1.125 < 1.25", fix "adopt 1.25 ratio: 16→20→25→31".
+    ❌ Anti-pattern: "typography needs work" with no measurements, no specific lines, Inter unflagged.
     
     ## Stop condition
+    Every typography rule evaluated; findings cite path+line+fix; verdict matches error presence.
     
-    Findings list every violation with `path`, `line`, and a `fix` field.
+    ## Confidence guidance
+    Lower when: CSS-in-JS dynamic sizes (≤0.75), tokens resolved indirectly (≤0.8), responsive variants unknown (≤0.75). ≥0.85 required.
 
 ### Skill: critique-ui-copy
 
     
     # Skill: critique-ui-copy
     
-    ## Task
+    ## Purpose
+    Apply STYLE.md / impeccable editorial rules to every user-facing string in the target. Flag hollow adjectives, generic CTAs, weak openers, and error messages that hide cause + recovery.
     
-    Apply STYLE.md / impeccable editorial rules to user-facing strings.
+    ## When to invoke
+    Invoke when `target_path` contains user-facing strings (component JSX text, i18n catalog, marketing copy, error message tables).
+    Do NOT invoke to: audit code comments, log messages, or developer-facing documentation.
     
-    ## Checklist
+    ## Procedure (follow exactly)
+    1. Enumerate every user-facing string. Skip aria-labels only if they duplicate visible copy verbatim.
+    2. Rule C1 — First sentence of any block opens with a stance, not a setup. Flag (severity=warn) hedged openers ("Welcome to…", "In this section…").
+    3. Rule C2 — Action labels begin with a verb. Flag (severity=error) banned phrases: "Click here", "Submit", "Learn more", "Read more", "More info".
+    4. Rule C3 — Banned hollow adjectives anywhere in product copy: "seamless", "robust", "elevate", "best-in-class", "powerful", "leverages", "delightful", "world-class", "cutting-edge", "innovative". Each occurrence → severity=error.
+    5. Rule C4 — No em-dashes (—) in product copy. Replace with periods or colons. Flag warn.
+    6. Rule C5 — Sentence case for buttons, links, headings. Title Case only for proper nouns. Flag warn.
+    7. Rule C6 — Error messages must state cause AND recovery; flag error if either is missing.
+    8. Every finding includes `original` text, a concrete `rewrite`, and the rule citation in `msg`.
+    9. `verdict = "pass"` iff zero error findings.
     
-    1. Open strong — the first sentence states a stance, not a setup.
-    2. Verbs-first action labels. Banned: "Click here", "Submit", "Learn more".
-    3. Banned hollow adjectives: "seamless", "robust", "elevate",
-       "best-in-class", "powerful", "leverages", "delightful".
-    4. No em-dashes in product copy (taste convention).
-    5. Sentence case for buttons; Title Case only for proper nouns.
-    6. Error messages name the cause and the recovery, not the rule violated.
+    ## How to think
+    - String is interpolated with a variable → audit the template; do not assume the variable is acceptable copy.
+    - Marketing hero copy uses an em-dash for stylistic flourish → still flag warn; brand exceptions must be documented elsewhere.
+    - Error message says "Something went wrong. Try again." → missing cause; flag error.
+    - Localized copy file → audit each language? Audit only the source locale; flag others for parallel review.
+    
+    ## Required inputs
+    `target_path` non-empty with user-facing strings. Code-only or comments-only → STOP with note.
+    
+    ## Output format
+    ```json
+    {"findings":[
+      {"area":"copy","severity":"error","path":"src/Cta.tsx","line":14,
+       "original":"Click here to learn more about our powerful platform.",
+       "rewrite":"See how teams ship faster.",
+       "msg":"rule C2 (banned label) + rule C3 ('powerful')."}],
+     "verdict":"revise","confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every string audited against C1-C6; every error finding cites the rule(s); every finding has a concrete `rewrite`; verdict respects error presence.
+    Fails if: missed a rule; offered "tighten copy" as a fix; left `rewrite` empty; verdict pass with banned phrases present.
+    
+    ## Common pitfalls
+    - Allowing "Submit" because the form actually submits — still banned; prefer "Save changes", "Send invite", "Create account".
+    - Accepting "robust" inside a tooltip because it's a small surface.
+    - Issuing rewrites that introduce new banned words.
+    - Auditing log output and flagging dev-facing strings.
+    
+    ## Examples
+    ✅ Finding: error, original "Click here", rewrite "View pricing", msg "rule C2: banned label".
+    ❌ Anti-pattern: "copy needs work" with no line numbers, no rewrites, no rule references.
     
     ## Stop condition
+    Every user-facing string audited against C1-C6; findings include original+rewrite+rule; verdict matches error presence.
     
-    Findings list every offending string with its `path`, `line`, and a
-    concrete rewrite.
+    ## Confidence guidance
+    Lower when: strings interpolated with unknown variables (≤0.75), brand voice unspecified (≤0.8), i18n keys with placeholder values (≤0.75). ≥0.85 required.
 
 ### Skill: detect-ai-slop-patterns
 
     
     # Skill: detect-ai-slop-patterns
     
-    ## Task
+    ## Purpose
+    Run a deterministic anti-pattern checklist over a UI surface, flagging tropes that mark AI-generated design. Every hit is an `error`-severity finding with the rule id; the frontend agent fixes each hit unambiguously.
     
-    Run the deterministic anti-pattern list across the UI. Each hit is an
-    `error` finding.
+    ## When to invoke
+    Invoke when `target_path` resolves to a UI surface AND the surface has been seen by humans (do not pre-emptively scrub scaffolds).
+    Do NOT invoke to: audit typography (use audit-typography-scale), motion (use tune-motion-physics), or copy (use critique-ui-copy).
     
-    ## Banned patterns (impeccable + taste-skill)
+    ## Procedure (follow exactly)
+    1. Parse the file. For each rule below, scan and emit `severity: "error"` with `rule_id` for every hit.
+    2. Rule 1 — Accent hue in 250-290° (AI Purple/Blue). Convert any hex/RGB to OKLCH for the check.
+    3. Rule 2 — Gradient text (`background-clip: text` + gradient fill) applied to any heading.
+    4. Rule 3 — Default glassmorphism (`backdrop-filter: blur(...)`) without explicit layered context (no behind-content).
+    5. Rule 4 — Side-stripe colored borders on cards (left/right border ≥3px with accent color).
+    6. Rule 5 — Hero metric template: 4-up big-number row in the hero area.
+    7. Rule 6 — Identical card grids with uniform shadows across every card.
+    8. Rule 7 — Centered hero when project `DESIGN_VARIANCE > 4`. (Check env or config; if unknown, skip with note.)
+    9. Rule 8 — Emojis as decorative UI (in headings, buttons, or feature lists).
+    10. Rule 9 — Inter as primary font.
+    11. Rule 10 — Modal-first interaction where inline editing would suffice (modal triggered for single-field edit).
+    12. Each finding includes `rule_id` (1-10), `path`, `line`, `msg`, and a concrete `fix`.
+    13. `verdict = "pass"` iff zero findings.
     
-    1. AI Purple / Blue dominance — accent in the 250–290° hue range.
-    2. Gradient text on headings.
-    3. Default glassmorphism (`backdrop-filter: blur(...)` without context).
-    4. Side-stripe coloured borders on cards.
-    5. Hero metric templates (4-up big-number row).
-    6. Identical card grids with uniform shadows.
-    7. Centered heroes when `DESIGN_VARIANCE > 4`.
-    8. Use of emojis as decorative UI.
-    9. Inter as primary font.
-    10. Modal-first interaction patterns where inline editing would suffice.
+    ## How to think
+    - Gradient is on a logo, not a heading → rule 2 does not apply; pass.
+    - Glassmorphism over an actual blurred background (image, video) → rule 3 passes.
+    - Card grid is a data table → rule 6 passes if shadows are absent.
+    - DESIGN_VARIANCE unset → skip rule 7 with a note in rationale; do not assume.
+    
+    ## Required inputs
+    `target_path` non-empty. DESIGN_VARIANCE optionally available. Missing path → STOP.
+    
+    ## Output format
+    ```json
+    {"findings":[
+      {"area":"ai-slop","severity":"error","rule_id":1,"path":"src/Hero.tsx","line":31,
+       "msg":"accent hue 272° falls inside the AI-purple band (250-290°).",
+       "fix":"shift accent to 28° (rust) or 160° (teal)."}],
+     "verdict":"revise","confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every rule 1-10 evaluated (or rule 7 explicitly skipped with note); every finding cites rule_id, path, line, fix; verdict matches finding count.
+    Fails if: missing rule_id; partial rule coverage; vague fix; verdict pass with findings present.
+    
+    ## Common pitfalls
+    - Forgetting hex→OKLCH conversion for rule 1.
+    - Allowing emojis in feature lists "because they're fun".
+    - Treating one Inter fallback as "primary" — only primary use triggers rule 9.
+    - Auto-fixing instead of flagging.
+    
+    ## Examples
+    ✅ Finding: rule_id=8, line 12, msg "rocket emoji used in feature heading", fix "remove emoji; use SVG icon component or no glyph".
+    ❌ Anti-pattern: emitting "UI looks generic" without rule_id or fixes.
     
     ## Stop condition
+    Every rule 1-10 evaluated (rule 7 explicitly noted if skipped); findings carry rule_id + path + line + fix; verdict matches.
     
-    Findings include the rule id (1–10) so the frontend agent's fix is
-    unambiguous.
+    ## Confidence guidance
+    Lower when: rule 7 input unavailable (≤0.8), styles in inline JS hard to parse (≤0.75), color tokens unresolved (≤0.8). ≥0.85 required.
 
 ### Skill: enforce-interaction-states
 
     
     # Skill: enforce-interaction-states
     
-    ## Task
+    ## Purpose
+    Every interactive surface must ship four states: loading, empty, error, and tactile feedback. This skill flags any missing state per component so the frontend agent fills them in.
     
-    Every interactive surface must ship four states. Flag any missing.
+    ## When to invoke
+    Invoke when `target_path` contains interactive elements (buttons, forms, lists fed by async data, navigation).
+    Do NOT invoke to: audit motion (use tune-motion-physics), copy of error messages (use critique-ui-copy), or color of focus rings (use pick-color-palette-oklch).
     
-    ## Required states
+    ## Procedure (follow exactly)
+    1. Enumerate interactive components in the file: anything that triggers async data, renders a list/grid, accepts user input, or is `<button>`/`<a>`/`role="button"`.
+    2. For each component, verify presence of:
+       - **Loading** state: skeleton, spinner, or progress indicator while data is pending.
+       - **Empty** state: meaningful copy + a next action; never a blank container.
+       - **Error** state: human-readable message AND a retry/recover affordance.
+       - **Tactile feedback**: distinguishable `:hover`, `:focus-visible`, and `:active` styles for the primary action; pressed-state micro-animation for buttons.
+    3. Flag (severity=error) each missing state per component.
+    4. Findings include `component` identifier (selector or filename anchor), `missing_state` enum value, `path`, `line`, `msg`, and a concrete `fix`.
+    5. `verdict = "pass"` iff every interactive component has all four states.
     
-    1. **Loading** — skeleton, spinner, or progress.
-    2. **Empty** — meaningful empty state with a next action, never blank.
-    3. **Error** — user-readable message + a retry/recover affordance.
-    4. **Tactile feedback** — `:hover`, `:focus-visible`, `:active`
-       distinguishable styles + pressed-state animation for buttons.
+    ## How to think
+    - Component renders static content (no async, no input) → only tactile feedback applies; skip loading/empty/error.
+    - List has empty state but it is just `null` or blank → does not count; flag.
+    - Error state shows the raw stack trace → counts as missing user-readable message; flag.
+    - Focus ring is the browser default → not distinguishable; flag tactile.
+    
+    ## Required inputs
+    `target_path` non-empty and contains interactive elements. No interactives → STOP with note "nothing to audit".
+    
+    ## Output format
+    ```json
+    {"findings":[
+      {"area":"states","severity":"error","path":"src/Inbox.tsx","line":71,
+       "component":"<MessageList>","missing_state":"empty",
+       "msg":"MessageList renders nothing when data is [].",
+       "fix":"render `EmptyState` with copy 'No messages yet' and a 'Compose' CTA."}],
+     "verdict":"revise","confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every interactive component evaluated for all 4 states; each finding names the missing state and offers a concrete fix; verdict respects error presence.
+    Fails if: missed an interactive component; lumped loading and empty together; "needs an empty state" with no copy or action proposed; verdict pass with missing states.
+    
+    ## Common pitfalls
+    - Accepting `disabled` styling as `:active` feedback.
+    - Treating a toast as a sufficient error state when the affected component is silent.
+    - Confusing skeleton with shimmer-only placeholders (no shape).
+    - Skipping `:focus-visible` audit because mouse use looks fine.
+    
+    ## Examples
+    ✅ Finding: error, missing_state="error", component="<PaymentForm>", fix "show inline alert with retry button on 5xx response".
+    ❌ Anti-pattern: "improve interaction states" with no component name, no missing-state enum, no fix copy.
     
     ## Stop condition
+    Every interactive component evaluated against the four states; findings cite component+state+path+line+fix; verdict matches.
     
-    Findings name the missing state and the file/line of the affected
-    component.
+    ## Confidence guidance
+    Lower when: state logic lives outside the file (≤0.75), async data flow unclear (≤0.7), heavy use of suspense/streaming (≤0.8). ≥0.85 required.
 
 ### Skill: evaluate-spacing-rhythm
 
     
     # Skill: evaluate-spacing-rhythm
     
-    ## Task
+    ## Purpose
+    Audit spacing as a designed rhythm rather than a default. Per the impeccable principle, identical spacing across siblings is a tell of unintentional layout; this skill emits findings the frontend agent uses to fix the rhythm.
     
-    Flag UI regions that use uniform / default spacing. Enforce intentional
-    variance (impeccable principle: spacing rhythm is a design decision, not
-    a default).
+    ## When to invoke
+    Invoke when `target_path` resolves to a UI surface with layout responsibilities (component, page, template).
+    Do NOT invoke to: evaluate type (use audit-typography-scale), color (use pick-color-palette-oklch), or motion (use tune-motion-physics).
     
-    ## Checklist
+    ## Procedure (follow exactly)
+    1. Parse the file. Enumerate sibling groups (children of the same parent layout container).
+    2. For each group, collect each child's vertical gap (margin-top, padding-top, gap, space-y).
+    3. Flag (severity=warn) any group where every direct child uses the same vertical gap token.
+    4. Flag (severity=warn) any layout where the horizontal gap equals the vertical gap (uniform 2D grid rhythm).
+    5. Flag (severity=error) any card grid where every card has identical dimensions AND identical surrounding gaps AND no hero/anchor variant.
+    6. For every finding, attach a concrete `fix` naming the element and the suggested rhythm change (e.g., "increase top gap of `<section data-id='hero'>` to 3× sibling gap").
+    7. Set `verdict = "pass"` if zero error-level findings, else `"revise"`.
     
-    1. Inspect padding/margin tokens across siblings.
-    2. Flag any group where every direct child uses the same vertical gap.
-    3. Flag any layout where vertical and horizontal gaps share one value.
-    4. Flag any "card grid" with identical card dimensions and gaps.
+    ## How to think
+    - Group of 2 children with identical gap → not enough signal; do not flag.
+    - Card grid intentionally uniform (table-like data) → still flag warn, let frontend justify or fix.
+    - Variable spacing already present (e.g., one child has `mt-12`, others `mt-4`) → pass.
+    - Spacing comes from a design-token alias (`space.section`) → inspect the resolved value, not the token name.
+    
+    ## Required inputs
+    `target_path` must exist and contain layout markup or CSS. Missing or empty → STOP.
+    
+    ## Output format
+    ```json
+    {"findings":[
+      {"area":"spacing","severity":"warn","path":"src/Home.tsx","line":42,
+       "msg":"All 4 sibling sections share `mt-8`.",
+       "fix":"raise hero section to `mt-24` to establish a primary rhythm."}],
+     "verdict":"revise","confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every flagged region cites `path` + `line`; every finding includes a concrete `fix`; verdict respects error-presence rule; no rewrite of the file performed.
+    Fails if: vague fix ("add more spacing"); missing line numbers; flagging when ≤2 siblings; verdict pass with error-level findings.
+    
+    ## Common pitfalls
+    - Auditing token names rather than resolved values.
+    - Flagging deliberate table/list rhythms without considering context.
+    - Issuing "increase spacing" without quantifying.
+    - Skipping horizontal gap audit.
+    
+    ## Examples
+    ✅ Finding: warn, line 42, msg "all hero subsections share `mt-8`", fix "raise the lead section to `mt-24` for a 3:1 rhythm".
+    ❌ Anti-pattern: "spacing feels off" with no measurements, no path, no fix.
     
     ## Stop condition
+    Every sibling group evaluated against the four rules; findings cite path+line+fix; verdict matches error presence.
     
-    Every flagged region has a concrete `fix` suggestion (e.g. "increase top
-    gap of `<section>` to 3× others to create a hero rhythm").
+    ## Confidence guidance
+    Lower when: file uses CSS-in-JS with dynamic values (≤0.75), resolved tokens unavailable (≤0.7), unusually small file (≤0.8). ≥0.85 required.
 
 ### Skill: pick-color-palette-oklch
 
     
     # Skill: pick-color-palette-oklch
     
-    ## Task
+    ## Purpose
+    Emit one production palette in OKLCH coordinates aligned to a chosen color strategy. Enforces anti-AI-purple, single-accent discipline, and offset whites/blacks per impeccable + taste-skill conventions.
     
-    Emit one palette in OKLCH coordinates, given `brand_context` and one
-    `colour_strategy` on the Restrained → Drenched scale (impeccable).
+    ## When to invoke
+    Invoke when `brand_context` is non-empty AND `colour_strategy` is one of the three allowed values.
+    Do NOT invoke to: pick a single brand color, generate gradients, or convert an existing hex palette (do that, then re-audit).
     
-    ## Rules (encoded from source skills)
+    ## Procedure (follow exactly)
+    1. Confirm `colour_strategy ∈ {restrained, balanced, drenched}`. Other values → STOP.
+    2. Choose accent hue H avoiding 250-290° (AI-purple/blue cluster). If brand context demands that range, lower confidence to ≤0.7 and proceed only with explicit override.
+    3. Constrain accent chroma C < 0.18 (≈ <80% saturation HSL). Out of range → clamp and note.
+    4. Generate 9 stops (50, 100, 200, ..., 900) for each role: `bg`, `fg`, `accent`, `muted`, `border`. Use lightness ladder L=98→8 with non-linear spacing (heavier mid-tones near L=50).
+    5. Replace pure white/black: `bg-50` minimum L=95 (never 100), `fg-900` maximum L=12 (never 0).
+    6. Restrained strategy: accent appears in ≤2 UI roles. Drenched: accent saturates ≥4 roles. Balanced: 2-3 roles.
+    7. Emit palette as a JSON object with role arrays of `oklch(L% C H)` strings; include the declared strategy.
     
-    1. Use OKLCH only. No hex/RGB/HSL in the palette output.
-    2. Never pure `#000000` or `#ffffff`. Always offset L by at least 5%.
-    3. **One** accent maximum. Saturation < 80% (taste-skill anti-AI-purple).
-    4. Provide 9 stops (50, 100, 200, … 900) per declared role
-       (`bg`, `fg`, `accent`, `muted`, `border`).
-    5. State the chosen strategy explicitly in the output.
+    ## How to think
+    - Brand demands purple → check 250-290° rule; if blocked, propose adjacent magenta or indigo and cite in rationale.
+    - Need a second accent → forbidden; collapse to one accent, derive emphasis from muted tones.
+    - Dark mode required → generate a second palette via separate invocation; this skill emits one palette per call.
+    - Accent appears on text and large surfaces simultaneously → check contrast (WCAG AA), adjust L.
+    
+    ## Required inputs
+    `brand_context` (string, non-empty), `colour_strategy` (enum). Missing or invalid → STOP.
+    
+    ## Output format
+    ```json
+    {"palette":{
+      "strategy":"balanced",
+      "roles":{
+        "bg":["oklch(98% 0.01 240)", "oklch(95% 0.02 240)", "..."],
+        "fg":["oklch(12% 0.02 240)", "..."],
+        "accent":["oklch(60% 0.16 28)", "..."],
+        "muted":["..."],
+        "border":["..."]}},
+     "rationale":"accent picked at 28° (warm rust) to avoid 250-290°; balanced strategy uses accent on CTAs + selection.",
+     "confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: all colors in `oklch()`; no pure white/black; one accent; accent chroma <0.18; accent hue outside 250-290° (or explicit override noted); 9 stops per role; strategy declared.
+    Fails if: hex/RGB/HSL in output; >1 accent; pure white/black; accent in AI-purple band without override; missing role.
+    
+    ## Common pitfalls
+    - Emitting hex codes "for convenience" — forbidden.
+    - Two accents masquerading as "primary" and "secondary".
+    - Linear lightness spacing producing washed-out mid-tones.
+    - Skipping contrast verification for accent on bg.
+    
+    ## Examples
+    ✅ strategy=restrained, accent hue=28° (rust), C=0.14. Accent used only on primary CTA and focus ring; all 9 stops per role in OKLCH.
+    ❌ Anti-pattern: accent at 270° (AI purple), 2 accents declared, `#000000` as fg-900.
     
     ## Stop condition
+    Palette emitted with strategy declared, OKLCH-only, ≤1 accent, no pure black/white, accent hue + chroma within rules or override noted.
     
-    Output is a JSON object `{strategy, roles: {bg: [...], fg: [...], ...}}`
-    where every value matches `oklch(L%  C  H)`.
+    ## Confidence guidance
+    Lower when: brand demands AI-purple band (≤0.7), contrast targets unmet without rework (≤0.75), strategy and brand seem mismatched (≤0.8). ≥0.85 required.
 
 ### Skill: tune-motion-physics
 
     
     # Skill: tune-motion-physics
     
-    ## Task
+    ## Purpose
+    Audit animations against the taste-skill motion budget: only compositable properties, calibrated spring defaults, bounded durations, no rogue infinite loops, and full reduced-motion support.
     
-    Audit animations against the taste-skill motion budget.
+    ## When to invoke
+    Invoke when `target_path` contains motion declarations (CSS transitions, keyframes, Framer Motion configs, GSAP timelines, etc.).
+    Do NOT invoke to: audit static layout (use evaluate-spacing-rhythm), interaction states (use enforce-interaction-states), or design tokens.
     
-    ## Checklist
+    ## Procedure (follow exactly)
+    1. Parse motion declarations. List each animation's target property, duration, easing, loop count, and reduced-motion handling.
+    2. Rule M1 — Animate only `transform` and `opacity`. Flag (severity=error) animations of `width`, `height`, `top`, `left`, `margin`, `padding`, `box-shadow`, `filter` (except justified hover-glow), `background-color` for large areas.
+    3. Rule M2 — Spring defaults `stiffness: 100, damping: 20`. Custom values without a comment justifying them → flag warn.
+    4. Rule M3 — UI transition durations between 150ms and 400ms inclusive. Outside → flag error. Page transitions may go to 600ms with justification.
+    5. Rule M4 — No `iteration-count: infinite` outside loading indicators. Flag error.
+    6. Rule M5 — Every animation has a `prefers-reduced-motion: reduce` fallback (zero or sub-100ms). Missing → flag error.
+    7. Each finding includes a concrete `fix` (e.g., "replace `height: auto` keyframe with `transform: scaleY(1)` + `transform-origin: top`").
+    8. `verdict = "pass"` iff zero error findings.
     
-    1. Animate only `transform` and `opacity`. Flag any animation of `width`,
-       `height`, `top`, `left`, `margin`, etc. (causes layout thrash).
-    2. Spring physics defaults: `stiffness: 100, damping: 20`. Flag custom
-       values without justification.
-    3. Durations between 150ms and 400ms for UI transitions.
-    4. No infinite loops outside loading indicators.
-    5. Respect `prefers-reduced-motion` — every animation must have a
-       reduced-motion fallback.
+    ## How to think
+    - Animation animates `filter: blur` for a hero parallax → considered justified if scoped and brief; flag warn not error.
+    - Spring physics specified as a preset (e.g., Framer "gentle") → treat as custom; require a justification comment.
+    - Loading spinner with `animation: spin 1s infinite` → exempt from M4.
+    - Transition exists in CSS but is also overridden in JS → audit the runtime value.
+    
+    ## Required inputs
+    `target_path` non-empty and contains motion. No motion in file → STOP with note "no motion to audit".
+    
+    ## Output format
+    ```json
+    {"findings":[
+      {"area":"motion","severity":"error","path":"src/Drawer.tsx","line":58,
+       "msg":"animates `width` from 0 to 320px (layout thrash).",
+       "fix":"animate `transform: translateX(-100%) → 0` on a fixed-width container."}],
+     "verdict":"revise","confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every motion declaration audited against M1-M5; flags include path+line+fix; verdict respects error presence.
+    Fails if: missed property in M1 list; allowed non-Fibonacci spring presets without justification; ignored reduced-motion; vague fix.
+    
+    ## Common pitfalls
+    - Allowing `height` animation because "it's just an accordion".
+    - Skipping M5 because the project doesn't have any reduced-motion testing.
+    - Treating `transition-all` as compliant — audit the resolved properties.
+    - Calling all springs "default" without checking the values.
+    
+    ## Examples
+    ✅ Finding: error, line 58, msg "animates width (layout thrash)", fix "use translateX on fixed-width container".
+    ❌ Anti-pattern: "motion feels janky" with no property names or fixes.
     
     ## Stop condition
+    Every motion declaration evaluated against M1-M5; findings carry path+line+fix; verdict matches.
     
-    Each violation includes a concrete `fix` (e.g. "replace `height: auto`
-    animation with `transform: scaleY` + `transform-origin: top`").
+    ## Confidence guidance
+    Lower when: motion library APIs not fully parsable (≤0.75), reduced-motion handling unverifiable from source (≤0.7), heavy GSAP timelines (≤0.8). ≥0.85 required.
 
 ### Skill: changelog-entry
 
     
     # Skill: changelog-entry
     
-    ## Task
+    ## Purpose
+    Append a single Keep-a-Changelog entry under the appropriate section for
+    the upcoming release. One line per user-visible change, referencing the
+    plan id.
     
-    Append a Keep-a-Changelog entry referencing the plan id and a one-line
-    summary of the user-visible change.
+    ## When to invoke
+    Plan step is `changelog` OR a user-visible change is merging AND the repo
+    has a `CHANGELOG.md`. Skip for internal refactors, test-only changes,
+    docs-only edits.
+    
+    ## Procedure (follow exactly)
+    1. Read `changelog_path`. Confirm it follows Keep-a-Changelog format
+       (sections: Added/Changed/Deprecated/Removed/Fixed/Security under an
+       `## [Unreleased]` or version header).
+    2. Locate the target version block (`[Unreleased]` if `version` not
+       provided; else create the version block at top if missing).
+    3. Locate or create the subsection matching `change_kind`.
+    4. Append exactly one bullet:
+       `- <patch_summary> (#<plan_id>)`
+       - Imperative voice ("Add", "Fix", "Remove"), past-tense allowed if file
+         convention uses it — match the file.
+       - One sentence, ≤120 chars where possible.
+    5. Preserve existing entries, ordering, and blank lines.
+    
+    ## How to think
+    - Multi-part change → one bullet per user-visible facet, all under the same
+      plan id.
+    - Breaking change → use `Changed` or `Removed`; prefix bullet with
+      `**BREAKING:**` if file convention uses it.
+    - Security fix → use `Security` section; never reference CVE details that
+      aren't yet public.
+    - No CHANGELOG.md exists → STOP; do not bootstrap one without explicit
+      instruction.
+    
+    ## Required inputs
+    All four core inputs non-empty. If `change_kind` is unclear, STOP and ask —
+    do not guess between `Changed` and `Fixed`.
+    
+    ## Output format
+    ```json
+    {
+      "changelog_entry": "- Add `LOG_LEVEL` env var to control logger verbosity (#PLAN-142)",
+      "touched_paths": ["CHANGELOG.md"],
+      "confidence": 0.95
+    }
+    ```
+    
+    ## Quality criteria
+    Pass: one bullet appended in correct section; format matches surrounding
+    entries; plan id present; file still parses; no other lines edited.
+    Fail: rewriting prior entries, mixing `Added` with `Fixed`, omitting plan
+    id, breaking heading levels, multi-line bullets without continuation
+    indent.
+    
+    ## Common pitfalls
+    - Adding entries under a released version block.
+    - Duplicating an entry already present.
+    - Marketing voice ("we are excited to introduce…") — keep it factual.
+    - Referencing internal implementation details rather than user impact.
+    
+    ## Examples
+    ✅ `- Fix race condition when two clients delete the same draft (#PLAN-77)`
+    under `### Fixed` of `## [Unreleased]`.
+    ❌ `- refactored DraftService to use a mutex` under `### Added` — internal
+    detail in wrong section.
+    
+    ## Stop condition
+    Bullet present in correct section; file diff is exactly the added bullet
+    (plus any new section header if created); touched_paths is single file.
+    
+    ## Confidence guidance
+    Section exists and change_kind clear ≥0.95; new section created ≥0.9;
+    ambiguous kind or breaking-change classification ≤0.75 (escalate). Floor
+    0.85.
 
 ### Skill: generate-api-docs
 
     
     # Skill: generate-api-docs
     
-    ## Task
+    ## Purpose
+    Run the language-native API doc generator over `source_paths` and emit the
+    entry-point path of the generated site/files. Do not hand-write docs.
     
-    Run the language-native doc generator (Sphinx, TypeDoc, godoc, rustdoc,
-    javadoc, etc.) over `source_paths` and emit the output path.
+    ## When to invoke
+    Plan step is `generate-api-docs` OR a public API surface (exported
+    symbols, package interface) changed AND the project has a doc generator
+    configured. Skip for internal-only modules.
+    
+    ## Procedure (follow exactly)
+    1. Select tool by `language`:
+       - python → `sphinx-build -b html docs/ <output_dir>` (require existing
+         `conf.py`; do NOT bootstrap one here).
+       - typescript → `typedoc --out <output_dir> <source_paths>`.
+       - go → `go doc` for inspection; for HTML use `godoc -http` or `pkgsite`.
+         For static export: `gomarkdoc ./...` if configured.
+       - rust → `cargo doc --no-deps --target-dir <output_dir>`.
+       - java → `javadoc -d <output_dir> <source_paths>`.
+    2. Run from `repo_root`. Capture stderr and surface tool warnings.
+    3. Verify the output directory contains the expected entry file (`index.html`,
+       `index.md`, package html).
+    4. Return `api_docs_path` pointing at the entry file.
+    5. Do NOT commit generated docs unless the project's CI/repo conventions
+       explicitly track them (look for existing committed `docs/api/`).
+    
+    ## How to think
+    - Doc generator not installed → STOP, signal missing toolchain.
+    - Source paths point to non-public modules → narrow to public surface.
+    - Doc build emits warnings (undocumented symbols) → record but do not fail
+      unless `-W` / strict mode is in config.
+    - Custom theme / plugins → trust existing config; do not modify it.
+    
+    ## Required inputs
+    `source_paths` non-empty; `language` set; `output_dir` writable. If tool
+    config is missing for languages that require one (sphinx, typedoc), STOP.
+    
+    ## Output format
+    ```json
+    {
+      "api_docs_path": "docs/api/index.html",
+      "touched_paths": ["docs/api/index.html","docs/api/modules/users.html"],
+      "tool_used": "typedoc",
+      "confidence": 0.92
+    }
+    ```
+    
+    ## Quality criteria
+    Pass: tool exited 0; entry file exists; warnings recorded; touched_paths
+    limited to `output_dir`; no source files modified.
+    Fail: missing entry file, fabricated paths, modifying source code,
+    overwriting hand-written docs outside `output_dir`.
+    
+    ## Common pitfalls
+    - Running with elevated strict flags the project doesn't use, causing false
+      failures.
+    - Including private symbols (e.g. typedoc default includes everything;
+      respect `--excludePrivate`).
+    - Writing into `output_dir` that is gitignored without informing the caller.
+    - Running godoc as a server (long-lived) instead of static export.
+    
+    ## Examples
+    ✅ `typedoc --out docs/api src/` produces `docs/api/index.html`;
+    api_docs_path = `docs/api/index.html`, tool_used `typedoc`.
+    ❌ Hand-authoring `docs/api/index.md` from inferred symbols.
+    
+    ## Stop condition
+    Tool exited successfully; entry file verified to exist; touched_paths
+    enumerated; no source modified.
+    
+    ## Confidence guidance
+    Configured tool, clean build ≥0.95; warnings present ≥0.9; missing config
+    0.5 (STOP); cross-language project ambiguous ≤0.75. Floor 0.85.
 
 ### Skill: update-readme
 
     
     # Skill: update-readme
     
-    ## Task
+    ## Purpose
+    Update README only when a user-visible documented surface changes. Avoid
+    churn — if nothing documented changed, emit `doc_changes: []`.
     
-    If the patch changes any documented surface (CLI, public API, env vars,
-    config keys), update README accordingly. If nothing documented changed,
-    emit `doc_changes: []` and exit.
+    ## When to invoke
+    Plan step is `update-docs` OR patch adds/removes/renames CLI flags, public
+    API endpoints, environment variables, config keys, install steps, or
+    supported platforms.
+    Do NOT invoke for: internal refactors, private helpers, test-only changes,
+    dependency bumps without behaviour change.
+    
+    ## Procedure (follow exactly)
+    1. Read current README. Identify sections (Install, Usage, Configuration,
+       CLI, API, Environment).
+    2. For each entry in `surfaces_changed`, locate the matching section. No
+       section exists → create one only if the surface is user-facing.
+    3. Update only the affected lines. Preserve heading levels, link anchors,
+       and example formatting (code fences, language tags).
+    4. If a flag/env var was removed, remove the doc entry AND add a "Removed
+       in vX.Y" note if a versioning convention is evident in the README.
+    5. Run a final read-through: every documented surface still exists in code;
+       every new surface in `surfaces_changed` appears in the README.
+    
+    ## How to think
+    - Internal-only surface (e.g. private function) → do nothing.
+    - Surface renamed → update the doc, add a one-line deprecation note if the
+      README already follows that style; otherwise just update.
+    - Multiple readmes (monorepo) → update only the one at `readme_path`.
+    - README is auto-generated (banner says so) → STOP and route to
+      `generate-api-docs` instead.
+    
+    ## Required inputs
+    `patch` non-empty; `readme_path` exists. If `surfaces_changed` is empty,
+    emit `doc_changes: []` and exit with confidence 0.95.
+    
+    ## Output format
+    ```json
+    {
+      "doc_changes": [
+        {"path":"README.md","section":"## Environment",
+         "diff":"+ - `LOG_LEVEL` — one of `debug|info|warn|error`. Default `info`."}
+      ],
+      "touched_paths": ["README.md"],
+      "rationale": "Added LOG_LEVEL env var in patch; documented under Environment.",
+      "confidence": 0.9
+    }
+    ```
+    
+    ## Quality criteria
+    Pass: every changed surface reflected; no unrelated edits; formatting
+    preserved; no broken links; no stale code samples.
+    Fail: rewriting unrelated prose, changing tone, fabricating surfaces,
+    introducing TODO markers, duplicating sections.
+    
+    ## Common pitfalls
+    - Updating README when no public surface changed (churn).
+    - Copying internal class names into Usage examples.
+    - Breaking anchor links by renaming a heading.
+    - Missing the table of contents update.
+    
+    ## Examples
+    ✅ Patch adds CLI flag `--dry-run`; doc_changes appends `- --dry-run — print
+    actions without executing` under `## CLI`.
+    ❌ Patch refactors an internal helper; doc_changes adds a paragraph about
+    the helper class.
+    
+    ## Stop condition
+    Every entry in `surfaces_changed` mapped to a README edit (or explicitly
+    deferred); README still parses as Markdown; touched_paths lists only README
+    files.
+    
+    ## Confidence guidance
+    Surfaces explicit and small ≥0.9; auto-generated README detected → 0.5
+    (route to generate-api-docs); ambiguous surface ≤0.7. Floor 0.85.
 
 ### Skill: fix-frontend-bug
 
     
     # Skill: fix-frontend-bug
     
-    ## Task
+    ## Purpose
+    Apply the minimum-diff fix for a UI bug so that the supplied failing Puppeteer/Playwright test turns green while every previously-green test stays green.
     
-    Minimum-diff fix for a UI bug. The failing Puppeteer test must exist
-    before the fix (planner ensures via `generate-regression-test`).
+    ## When to invoke
+    Invoke when the plan step is fix a UI bug AND `failing_puppeteer_test` exists and currently fails AND the failure reproduces locally. Reject if the test is missing — request `generate-regression-test` first. Reject if the suspected fault is server-tier.
+    
+    ## Procedure (follow exactly)
+    1. Run `failing_puppeteer_test`. Confirm it fails for the reason described in `bug_report`. If it fails for a different reason, STOP and revisit the test.
+    2. Locate the offending code. Prefer `suspected_paths`; otherwise trace from the test selector through component tree.
+    3. Form a one-sentence root cause hypothesis. Write it in `rationale`. If you cannot, STOP — do not patch blindly.
+    4. Apply the smallest fix that addresses the root cause. Forbidden: changing the test, masking with `try/catch`, hiding the element, or adding `setTimeout`.
+    5. Run the full UI test suite + screenshot diff. The target test must now pass; all others must remain green.
+    6. If the fix touches a shared component, ensure every callsite still renders unchanged (screenshot diff <1%).
+    
+    ## How to think
+    - "Works on my machine" → reproduce in the same browser+viewport the Puppeteer test uses; do not dismiss.
+    - Race condition → fix the cause (await the correct promise), not the symptom (sleep).
+    - Off-by-one in pagination → patch the math, not the test fixture.
+    - Tempted to refactor surrounding code → don't; emit a follow-up `refactor-frontend` step.
+    
+    ## Required inputs
+    `bug_report` and `failing_puppeteer_test` non-empty. `suspected_paths` may be empty.
+    
+    ## Output format
+    {"patch": "unified diff", "touched_paths": ["src/components/UserList.tsx"], "rationale": "1-3 sentences explaining root cause and fix", "confidence": 0.0}
+    
+    ## Quality criteria
+    Passes if: regression test now passes; all prior tests still green; diff scoped to root-cause file(s); no `setTimeout`/`sleep` hack; no test file altered; no server file altered.
+    Fails if: modifies the failing test; broadens a `catch` to mask the error; hides UI to bypass assertion; touches more files than necessary; introduces a dependency.
+    
+    ## Common pitfalls
+    - Adding `await page.waitForTimeout(500)` in the test to "stabilize" it. Forbidden — fix the race.
+    - Wrapping the buggy line in `try {} catch {}`. Masking, not fixing.
+    - Reformatting the whole file. Inflates diff.
+    
+    ## Examples
+    React fix for a stale-closure bug:
+    ```tsx
+    // before
+    useEffect(() => { fetchData().then(setData); }, []);          // misses prop changes
+    // after
+    useEffect(() => { fetchData(userId).then(setData); }, [userId]);
+    ```
+    
+    Anti-pattern (masking):
+    ```tsx
+    // before: throws when list is empty
+    return items[0].name;
+    // "fix":
+    try { return items[0].name; } catch { return ''; }            // hides the bug
+    // proper fix:
+    if (items.length === 0) return <EmptyState />;
+    return items[0].name;
+    ```
     
     ## Stop condition
+    `failing_puppeteer_test` passes; full UI suite passes; screenshot diff <1% on unrelated views; `touched_paths` is the smallest set required.
     
-    `failing_puppeteer_test` passes; all previously-green tests remain green.
+    ## Confidence guidance
+    Lower when: root cause uncertain (≤0.7), failure not reproduced locally (≤0.6), fix touches shared component (≤0.8), test flake suspected (≤0.7). Floor 0.85 to proceed.
 
 ### Skill: implement-component
 
     
     # Skill: implement-component
     
-    ## Task
+    ## Purpose
+    Author one reusable presentational UI component that accepts the declared props and renders deterministically. No data fetching, no global state, no business logic — pure rendering plus local interaction (hover, focus, disclosure).
     
-    Author one reusable UI component with the named props. No business logic,
-    no data fetching — pure presentation + local interaction.
+    ## When to invoke
+    Invoke when the plan step says implement a component AND a paired unit/Storybook test step exists AND the design reference is non-empty. Reject if the spec demands network calls, route knowledge, or auth state — those belong in `implement-page`.
+    
+    ## Procedure (follow exactly)
+    1. Resolve `file_path`. If a component already exists there, STOP and ask human (probably `refactor-frontend`).
+    2. Define the props type from `props_schema` exactly. Required vs optional must match. Do not add props that aren't in the schema.
+    3. Implement rendering using the project's existing UI primitives (design system, Tailwind tokens, CSS modules — whatever is already in use). Do not introduce a new styling system.
+    4. Render loading, empty, and error states ONLY if a corresponding prop or slot is declared. Otherwise stay pure.
+    5. Local state (hover, expanded) → use the framework's idiomatic hook/composable (`useState`, `ref`, `signal`). Never a global store.
+    6. Accessibility: every interactive element keyboard-reachable; semantic HTML preferred over `role` attributes; alt text from props.
+    7. Run the paired unit test / Storybook story for each prop shape. If it fails, fix the component, never the test.
+    
+    ## How to think
+    - Prop semantics ambiguous → STOP and ask human; do not guess.
+    - Looks like a page (calls fetch, reads route) → reject and request `implement-page`.
+    - Visual token missing from design system → reuse the closest token and note in `rationale`; do not invent colors/spacing.
+    - Memoization → only with profiling evidence in the plan, otherwise omit.
+    
+    ## Required inputs
+    All four fields non-empty. `props_schema` must enumerate every prop with type and required-flag.
+    
+    ## Output format
+    {"patch": "unified diff", "touched_paths": ["src/components/UserCard/UserCard.tsx", "src/components/UserCard/UserCard.test.tsx"], "rationale": "1-3 sentences", "confidence": 0.0}
+    
+    ## Quality criteria
+    Passes if: props match schema exactly; component is a pure function of props; no imports from `api/`, `store/`, `router/`; unit tests cover every prop variant; a11y lint clean.
+    Fails if: fetches data; reads global state; mutates props; introduces a new dependency; ships untyped `any` props.
+    
+    ## Common pitfalls
+    - Importing `fetch`/`axios` inside a component. Forbidden — pass data via props.
+    - Inline styles where design tokens exist. Use the token.
+    - `useEffect` for derivation. Compute during render.
+    - Spreading `...props` onto root DOM. Be explicit about which props pass through.
+    
+    ## Examples
+    React/TS:
+    ```tsx
+    type UserCardProps = { name: string; avatarUrl?: string; onClick?: () => void };
+    export function UserCard({ name, avatarUrl, onClick }: UserCardProps) {
+      return (
+        <button onClick={onClick} className="card">
+          {avatarUrl ? <img src={avatarUrl} alt="" /> : <span aria-hidden>?</span>}
+          <span>{name}</span>
+        </button>
+      );
+    }
+    ```
+    
+    Anti-pattern:
+    ```tsx
+    export function UserCard({ id }: { id: string }) {
+      const [user, setUser] = useState<any>();           // wrong layer
+      useEffect(() => { fetch(`/api/u/${id}`).then(r => r.json()).then(setUser); }, [id]);
+      return <div style={{ color: '#ff0066' }}>{user?.name}</div>;  // hard-coded color
+    }
+    ```
     
     ## Stop condition
+    Component file exists at `file_path`; paired test asserts every prop variant; tests pass; no file outside `touched_paths` modified.
     
-    Component renders in isolation (Storybook/test harness) for each prop
-    shape in the paired unit test.
+    ## Confidence guidance
+    Lower when: design ref ambiguous (≤0.75), prop semantics underspecified (≤0.7), new file in unfamiliar folder (≤0.8), a11y unclear (≤0.8). Floor 0.85 to proceed.
 
 ### Skill: implement-page
 
     
     # Skill: implement-page
     
-    ## Task
+    ## Purpose
+    Compose one route-level page that wires existing components to existing API client functions through the project's configured data layer (React Query, SWR, Next loaders, Nuxt `useAsyncData`, etc.). Render loading, empty, error, and success states explicitly.
     
-    Compose one route-level page from existing components. Wire data
-    dependencies through the configured client (React Query / SWR / loaders).
-    Do NOT author new components inline — call `implement-component` first.
+    ## When to invoke
+    Invoke when the plan step is implement a page AND every component referenced already exists AND every `data_dependencies[*].client_fn` already exists in the API client layer. Reject otherwise — call `implement-component` or `integrate-api-client` first.
+    
+    ## Procedure (follow exactly)
+    1. Resolve the page file path from the framework's routing convention (`app/users/[id]/page.tsx`, `pages/users/[id].vue`, `src/routes/users/[id]/+page.svelte`). Do not invent a different convention.
+    2. Read the TSD page contract. If any data state (empty, partial error) is unspecified, STOP and ask human.
+    3. Import existing components and the existing layout from `layout_spec`. Never inline a new component definition — call `implement-component` first as a separate step.
+    4. Wire each entry in `data_dependencies` through the project's configured client (`useQuery`, `useSWR`, loader, fetcher) using the declared cache key. Do not call `fetch` directly.
+    5. Render four branches in order: loading → error → empty → ok. Empty and error must reuse existing fallback components if present.
+    6. Wire user actions (submit, delete) to mutations from the same data layer; never bypass to `axios.post`.
+    7. Run the paired Puppeteer/Playwright test. If it fails, fix the page, never the test.
+    
+    ## How to think
+    - Page needs a brand-new component → reject this step; planner must add `implement-component` first.
+    - Auth-gated route → wrap with the project's existing route-guard; never roll new auth.
+    - Cache key collision risk → use a tuple including route params; do not stringify ad-hoc.
+    - SSR vs CSR ambiguous in TSD → match the framework's default for the route type.
+    
+    ## Required inputs
+    All four fields non-empty. Every `client_fn` must resolve to an existing function. Every component in `layout_spec` must exist.
+    
+    ## Output format
+    {"patch": "unified diff", "touched_paths": ["app/users/[id]/page.tsx", "tests/e2e/users.spec.ts"], "rationale": "1-3 sentences", "confidence": 0.0}
+    
+    ## Quality criteria
+    Passes if: route resolves; loading/empty/error/ok all render; no inline `fetch`; no new component definitions; Puppeteer test green; a11y landmarks present (`main`, `header`).
+    Fails if: defines new components inline; bypasses data layer; missing a state branch; touches server-tier files.
+    
+    ## Common pitfalls
+    - Skipping the empty state because "the list is never empty in practice". Render it anyway.
+    - Calling `fetch` in `useEffect`. Use the configured data hook.
+    - Hardcoding route params instead of reading from the router.
+    
+    ## Examples
+    Next.js App Router:
+    ```tsx
+    export default function UserPage({ params }: { params: { id: string } }) {
+      const { data, error, isLoading } = useQuery({
+        queryKey: ['user', params.id],
+        queryFn: () => userClient.get(params.id),
+      });
+      if (isLoading) return <Spinner />;
+      if (error) return <ErrorState error={error} />;
+      if (!data) return <EmptyState resource="user" />;
+      return <UserDetailLayout user={data} />;
+    }
+    ```
+    
+    Anti-pattern:
+    ```tsx
+    export default function UserPage() {
+      const [u, setU] = useState<any>();
+      useEffect(() => { fetch('/api/user').then(r => r.json()).then(setU); }, []); // bypass data layer
+      return <div>{u?.name ?? 'loading'}</div>;                                    // no error/empty
+    }
+    ```
     
     ## Stop condition
+    Page renders at `route`; all four data states verified; paired Puppeteer test passes; no new component or client function introduced.
     
-    Page loads at `route`, renders all data states (loading/empty/error/ok),
-    and the paired Puppeteer test passes.
+    ## Confidence guidance
+    Lower when: TSD states underspecified (≤0.7), data hook semantics unclear (≤0.75), SSR/CSR ambiguous (≤0.75), unfamiliar router (≤0.8). Floor 0.85 to proceed.
 
 ### Skill: integrate-api-client
 
     
     # Skill: integrate-api-client
     
-    ## Task
+    ## Purpose
+    Add one strongly typed client function that calls one backend endpoint using the project's existing HTTP client. Map non-2xx responses to typed error classes per the project's error model.
     
-    Add one typed client function calling one backend endpoint. Use the
-    project's existing HTTP client. Handle non-2xx as typed errors.
+    ## When to invoke
+    Invoke when the plan step is integrate an API client function AND the backend endpoint exists (or is in the same plan, declared) AND the project already has an HTTP client module. Reject if no HTTP client exists yet — that is a scaffold step.
+    
+    ## Procedure (follow exactly)
+    1. Locate the existing API client module (e.g. `src/api/client.ts`, `src/lib/http.ts`). Reuse it; do not create a parallel client.
+    2. Place the new function in the resource's existing file (e.g. `src/api/users.ts`). If none exists, create one matching the resource naming pattern.
+    3. Define request and response types from `request_schema` and `response_schema`. If the project uses Zod/Yup, define a schema and infer the type. Do not duplicate types — import shared types from `src/api/types.ts` if present.
+    4. Call the HTTP client with the typed payload. Pass path params through interpolation; query params through the client's params option; body as JSON.
+    5. Branch on status:
+       - 2xx → parse and return the typed response.
+       - 4xx/5xx → throw a typed error from the error model (`ApiError`, `NotFoundError`). Never throw raw strings.
+    6. Do not retry, do not cache — those are handled by the data layer.
+    7. Run the paired unit test that mocks the HTTP layer (`msw`, `nock`, `vi.mock`). Assert request shape, response shape, error mapping.
+    
+    ## How to think
+    - Endpoint not yet deployed → stub via the same typed contract; mark `confidence` lower and note in `rationale`.
+    - Backend returns inconsistent error shapes → STOP and ask human; do not paper over.
+    - Auth headers → reuse the client's existing interceptor; do not add ad-hoc headers.
+    
+    ## Required inputs
+    All four fields non-empty. `error_model` must enumerate the status codes the endpoint can return.
+    
+    ## Output format
+    {"patch": "unified diff", "touched_paths": ["src/api/users.ts", "src/api/users.test.ts"], "rationale": "1-3 sentences", "confidence": 0.0}
+    
+    ## Quality criteria
+    Passes if: types strict (no `any`); response narrowed by status; errors typed; mock test asserts request + response + at least one error; no new HTTP library.
+    Fails if: uses `fetch` directly when the project has a client; swallows errors; returns `unknown`; introduces retry/caching here.
+    
+    ## Common pitfalls
+    - `try/catch` that returns `null` on error. Throw a typed error instead.
+    - `JSON.parse(response.text)` when the client already parses. Trust the client.
+    - Building query strings by hand. Use the client's params option.
+    
+    ## Examples
+    TS with a shared client:
+    ```ts
+    import { http } from './client';
+    import { UserSchema, type User } from './types';
+    import { ApiError, NotFoundError } from './errors';
+    
+    export async function getUser(id: string): Promise<User> {
+      const res = await http.get(`/v1/users/${id}`, { validateStatus: () => true });
+      if (res.status === 200) return UserSchema.parse(res.data);
+      if (res.status === 404) throw new NotFoundError('user', id);
+      throw new ApiError(res.status, res.data);
+    }
+    ```
+    
+    Anti-pattern:
+    ```ts
+    export async function getUser(id: string) {
+      try { return (await fetch('/v1/users/' + id)).json(); }      // bypass client
+      catch { return null; }                                        // swallow error
+    }
+    ```
     
     ## Stop condition
+    Function compiles under strict TS; mock-based unit test passes for success and at least one error path; no new HTTP dep introduced.
     
-    Client function compiles with strict types; paired unit test mocks the
-    endpoint and asserts request/response shapes.
+    ## Confidence guidance
+    Lower when: error model unclear (≤0.7), backend endpoint not yet implemented (≤0.75), response schema ambiguous (≤0.75). Floor 0.85 to proceed.
 
 ### Skill: refactor-frontend
 
     
     # Skill: refactor-frontend
     
-    ## Task
+    ## Purpose
+    Apply a behavior-preserving change to UI-tier code only. Rendered output, public component APIs, and accessibility tree must be identical before and after.
     
-    Behaviour-preserving change limited to UI-tier paths. Visual output must
-    be identical (Puppeteer screenshot diff <1%).
+    ## When to invoke
+    Invoke when the plan step is refactor and `target_paths` are all under the UI tier (components/, pages/, hooks/, styles/, api client) AND a test suite covering visible behavior exists. Reject if any target path is server-tier or if there are no covering tests — request `generate-regression-test` first.
     
-    ## Do NOT
+    ## Procedure (follow exactly)
+    1. Confirm every path in `target_paths` is UI-tier. If any path is server-tier, STOP and ask human.
+    2. Run the existing test suite + Puppeteer screenshot suite. Capture baseline. If anything is red before changes, STOP — refactoring on a red tree is forbidden.
+    3. Apply the smallest change that achieves `refactor_goal`. Examples:
+       - Extract hook: move stateful logic to `src/hooks/<name>.ts`, import from prior caller.
+       - Split component: move JSX subtree to new file, import; keep prop API identical.
+       - Rename internal prop: only if not part of any public export.
+    4. Public component APIs (exported prop types, exported function names) must not change. If they would, STOP — that is a breaking change requiring an explicit plan step.
+    5. Re-run tests + screenshot diff. Diff must be <1% (anti-alias tolerance).
+    6. Do not add libraries, do not bump dependencies, do not "modernize" unrelated code.
     
-    - Change public component APIs.
-    - Touch server-side files.
-    - Add libraries.
+    ## How to think
+    - Refactor goal vague ("clean up") → STOP and ask for a concrete invariant.
+    - Tempted to fix an adjacent bug → don't; emit a follow-up plan step instead.
+    - Screenshot diff >1% but "looks the same" → still a fail; investigate.
+    
+    ## Required inputs
+    All three fields non-empty. `invariants` must include at minimum "visual output identical" and "exported props unchanged".
+    
+    ## Output format
+    {"patch": "unified diff", "touched_paths": ["src/components/UserCard/UserCard.tsx", "src/hooks/useDisclosure.ts"], "rationale": "1-3 sentences", "confidence": 0.0}
+    
+    ## Quality criteria
+    Passes if: every prior test still green; screenshot diff <1%; exported APIs byte-identical; no new dependency; no server-tier file touched.
+    Fails if: alters public API; changes visual output; adds library; modifies file outside `target_paths`; mixes refactor with feature work.
+    
+    ## Common pitfalls
+    - Renaming an exported prop "while we're here". Breaking change.
+    - Replacing `useState` with a state library. New dependency — forbidden.
+    - Reformatting whole files. Inflates diff and hides intent.
+    
+    ## Examples
+    Extract a hook:
+    ```tsx
+    // before: Disclosure logic inline in UserMenu.tsx
+    // after:
+    // src/hooks/useDisclosure.ts
+    export function useDisclosure(initial = false) {
+      const [open, setOpen] = useState(initial);
+      return { open, toggle: () => setOpen(v => !v), close: () => setOpen(false) };
+    }
+    // src/components/UserMenu.tsx — uses useDisclosure(), JSX unchanged.
+    ```
+    
+    Anti-pattern:
+    ```tsx
+    // "refactor" that renames a public prop — breaking
+    export function UserCard({ userName }: { userName: string }) { ... }  // was `name`
+    ```
+    
+    ## Stop condition
+    All tests green; screenshot diff <1%; exported API identical; `touched_paths` ⊆ `target_paths` (plus any new hook file under hooks/).
+    
+    ## Confidence guidance
+    Lower when: test coverage thin (≤0.7), goal vague (≤0.7), framework idioms unclear (≤0.8), screenshot tooling flaky (≤0.8). Floor 0.85 to proceed.
 
 ### Skill: scaffold-frontend
 
     
     # Skill: scaffold-frontend
     
-    ## Task
+    ## Purpose
+    Create the minimal UI-tier directory layout using the framework's official CLI exactly once at the start of a project. Produce a runnable empty app whose dev server starts and serves a blank page on the default port.
     
-    Create the minimal UI-tier layout using the framework's official CLI
-    (`create-vite`, `create-next-app`, `ng new`, `flutter create`, etc.).
-    Do not hand-author boilerplate.
+    ## When to invoke
+    Invoke when the plan step is `scaffold-frontend` AND `target_dir` does not yet exist OR is empty AND the TSD names the framework. Reject if `target_dir` already contains `package.json`, `pubspec.yaml`, or an existing framework manifest — call `refactor-frontend` instead.
+    Do NOT invoke to: add a second app, migrate frameworks, or add libraries to an existing scaffold.
+    
+    ## Procedure (follow exactly)
+    1. Verify `target_dir` is empty (or does not exist). If not empty, STOP and ask human.
+    2. Select the framework's official scaffolder by name:
+       - vite-react → `npm create vite@latest <dir> -- --template react-ts`
+       - next → `npx create-next-app@latest <dir> --ts --eslint --app`
+       - nuxt → `npx nuxi@latest init <dir>`
+       - sveltekit → `npm create svelte@latest <dir>`
+       - angular → `npx -p @angular/cli ng new <dir> --strict --routing --style=css`
+       - flutter → `flutter create <dir>`
+    3. Run the CLI non-interactively. Do NOT hand-author `package.json`, `tsconfig.json`, or entry files. The CLI owns them.
+    4. Install dependencies using the requested `package_manager`. Do not switch managers.
+    5. Verify `<package_manager> run dev` (or framework equivalent) starts cleanly and a 200 is served at `/`.
+    6. Commit only the generated tree. Do not add Storybook, testing libs, or styling kits in this step — those are separate plan steps.
+    
+    ## How to think
+    - Framework not in the list above → STOP and ask human; do not improvise.
+    - CLI prompts for unspecified choices → choose the most idiomatic default (TS, strict, app-router) and note in `rationale`.
+    - Monorepo with workspaces → place `target_dir` under the workspace glob; do not modify root `package.json` beyond what the CLI does.
+    
+    ## Required inputs
+    All three fields non-empty. `framework` must match the TSD literally. If TSD says `react` without a build tool, default to `vite-react` and note it.
+    
+    ## Output format
+    {"patch": "unified diff of created files", "touched_paths": ["apps/web/package.json", "apps/web/src/main.tsx", ...], "rationale": "1-3 sentences", "confidence": 0.0}
+    
+    ## Quality criteria
+    Passes if: CLI ran cleanly; dev server boots; lint passes on generated code; TypeScript strict is on where supported; no dependency outside what the CLI installs.
+    Fails if: hand-authored boilerplate; mixed package managers; added UI libraries; modified files outside `target_dir`; committed `node_modules`.
+    
+    ## Common pitfalls
+    - Running `create-vite` then editing the template to "improve" it. Don't.
+    - Mixing pnpm lockfile with npm install. Pick one and stick to it.
+    - Adding Tailwind/Storybook here. Those are subsequent plan steps.
+    
+    ## Examples
+    Vite + React + TS:
+    ```
+    npm create vite@latest apps/web -- --template react-ts
+    cd apps/web && npm install && npm run dev
+    ```
+    
+    Anti-pattern:
+    ```
+    mkdir apps/web && cd apps/web
+    cat > package.json <<EOF        # hand-authored boilerplate — forbidden
+    { "name": "web", "scripts": { "dev": "vite" } }
+    EOF
+    ```
     
     ## Stop condition
+    `<package_manager> run dev` starts; HTTP GET `/` returns 200; only files generated by the CLI are present; `touched_paths` matches the CLI's output exactly.
     
-    `<framework> dev` starts a blank page successfully.
+    ## Confidence guidance
+    Lower when: framework choice ambiguous in TSD (≤0.75), monorepo layout uncertain (≤0.8), CLI flags non-default (≤0.8), unfamiliar framework (≤0.7). Floor 0.85 to proceed.
 
 ### Skill: build-plan
 
@@ -1438,914 +3541,3981 @@ running through the Codex CLI in this repository.
     
     # Skill: audit-bundle-size
     
-    ## Task
+    ## Purpose
+    Measure gzipped initial-load bundle sizes from the supplied build
+    output and compare to budgets. Findings only — never modify code.
+    Anti-hallucination: read real file sizes / stats; never estimate from
+    source LOC.
     
-    Measure gzipped bundle size from the build output (Vite/webpack stats,
-    `dist/` size, etc.). Compare to `budget_kb` (default 250 for initial
-    JS, 50 for initial CSS). Flag every entry-chunk over budget with the
-    top contributors.
+    ## When to invoke
+    Plan step requests perf audit AND build output exists AND entry
+    chunks are identifiable.
+    Do NOT invoke for: dev-mode bundles (unminified), server-only code,
+    or build artefacts older than the latest commit.
+    
+    ## Procedure (follow exactly)
+    1. Identify the source of truth:
+       - Webpack: `stats.json` (use `assets[].size` + `gzip` if present
+         or compute via gzip of file).
+       - Vite/Rollup: `dist/.vite/manifest.json` + actual gzipped file
+         sizes on disk.
+       - Plain `dist/`: gzip each entry file (`gzip -c file | wc -c`).
+    2. Determine entry chunks (initial load only) — follow manifest
+       `entry: true` or HTML `<script src>` references.
+    3. For each entry chunk:
+       - Measure gzipped bytes.
+       - Compare to `budget_kb.js` for `.js` and `budget_kb.css` for
+         `.css`. Defaults: 250 KB JS, 50 KB CSS.
+    4. For every over-budget chunk emit a finding including: measured KB,
+       budget, top 3 modules contributing (from stats), suggested fix
+       (code-split, dynamic import, tree-shake, replace dep).
+    5. Report total initial transfer size as well.
+    
+    ## How to think
+    - Vendor chunk vs app chunk — budget applies to the sum on initial
+      load.
+    - Async chunks (route-split) are NOT counted against initial budget;
+      list them informationally.
+    - Source maps must be excluded from measurement.
+    - If stats lack module breakdown, lower confidence and flag without
+      fix detail.
+    
+    ## Required inputs
+    Build output present and readable. Budgets defaulted if absent.
+    
+    ## Output format
+    ```json
+    {"findings": [
+       {"metric": "initial_js_gzip", "measured": 412, "budget": 250,
+        "severity": "error", "path": "dist/assets/index-abc.js",
+        "fix": "Code-split routes via dynamic import; remove moment (-60KB)."}],
+     "verdict": "block", "confidence": 0.96}
+    ```
+    
+    ## Quality criteria
+    Pass: every entry chunk measured; gzip used (not raw); budget applied
+    per asset type; verdict matches; top contributors named when stats
+    available.
+    Fail: comparing raw bytes to gzip budget; counting async chunks as
+    initial; estimating sizes from source.
+    
+    ## Common pitfalls
+    - Reporting brotli when budget is gzip.
+    - Including `.map` files in totals.
+    - Treating CSS as JS or vice versa.
+    - Missing the second/third entry in multi-entry apps.
+    
+    ## Examples
+    Pass: webpack-bundle-analyzer JSON parsed, main chunk 218 KB gzip,
+    verdict `pass`.
+    Fail: Vite app, main chunk 412 KB gzip (budget 250) → finding emitted
+    with fix proposing route-level dynamic import.
+    
+    ## Stop condition
+    Every entry chunk measured and compared; findings emitted with sizes
+    and fixes; verdict set; no source modified.
+    
+    ## Confidence guidance
+    Stats with gzip + module breakdown = 0.97; gzip computed manually
+    ≤0.93; only raw sizes available ≤0.88; estimates ≤0.7. Must be
+    ≥0.95 to emit.
 
 ### Skill: audit-core-web-vitals
 
     
     # Skill: audit-core-web-vitals
     
-    ## Task
+    ## Purpose
+    Compare measured Core Web Vitals from a Puppeteer run against budgets
+    and emit findings. Findings only. Anti-hallucination: every value
+    must come from the measurement source (web-vitals JS library,
+    Lighthouse JSON, or Performance API), never estimated.
     
-    Collect LCP, INP, CLS, TTFB from a Puppeteer run. Compare to budgets
-    (default: LCP ≤ 2.5s, INP ≤ 200ms, CLS ≤ 0.1, TTFB ≤ 800ms). Flag any
-    metric over budget with the affected URL.
+    ## When to invoke
+    Plan step requests CWV audit AND a Puppeteer run captured LCP, INP,
+    CLS, TTFB on a representative URL under the project's standard
+    throttling profile.
+    Do NOT invoke for: localhost runs without throttling, runs missing
+    any of the four metrics, or runs against dev builds.
+    
+    ## Procedure (follow exactly)
+    1. Locate the measurements in `puppeteer_run`. Acceptable sources:
+       - `web-vitals` library callbacks serialised to JSON.
+       - Lighthouse report `audits.metrics.details.items[0]`.
+       - PerformanceObserver entries from the page.
+    2. Default budgets (override via `budgets`):
+       - LCP ≤ 2.5 s (good); 2.5–4 s (needs improvement); > 4 s (poor).
+       - INP ≤ 200 ms; 200–500 (NI); > 500 (poor).
+       - CLS ≤ 0.1; 0.1–0.25 (NI); > 0.25 (poor).
+       - TTFB ≤ 800 ms; 800–1800 (NI); > 1800 (poor).
+    3. Severity mapping: good = no finding; needs-improvement =
+       `warning`; poor = `error`.
+    4. For each metric not "good" emit a finding with: metric,
+       measured (with units), budget, severity, path (URL audited), and
+       a fix tied to the specific cause:
+       - LCP poor → optimise hero image (`fetchpriority="high"`,
+         preconnect, AVIF/WebP, server-side rendering).
+       - INP poor → break up long tasks, defer non-critical JS, use
+         scheduler.yield.
+       - CLS poor → reserve space for media, avoid late-injected
+         content, use `font-display: optional`.
+       - TTFB poor → cache at edge, reduce server work, enable HTTP/2.
+    5. Always run all four checks even if the first fails.
+    
+    ## How to think
+    - Single-run variance can mislead — prefer median of ≥ 5 runs; if
+      only one, lower confidence and note it.
+    - Throttling profile must be documented (CPU 4x, network Slow 4G is
+      the standard reference). Without it, results are not comparable.
+    - INP requires user interactions; pure navigation traces will lack
+      it — flag as "not measured" rather than passing.
+    - CLS is cumulative across the session window — confirm capture
+      window matches definition.
+    
+    ## Required inputs
+    Run output contains LCP, INP, CLS, TTFB with numeric values and the
+    URL under test.
+    
+    ## Output format
+    ```json
+    {"findings": [
+       {"metric": "LCP", "measured": 3.4, "budget": 2.5,
+        "severity": "warning", "path": "https://app.example.com/",
+        "fix": "Preload hero image; add fetchpriority=high; serve AVIF."}],
+     "verdict": "block", "confidence": 0.96}
+    ```
+    
+    ## Quality criteria
+    Pass: all four metrics evaluated; values with units; budgets applied;
+    fixes specific to the metric and its likely cause; verdict matches
+    worst severity (any error → block).
+    Fail: missing a metric without flagging it; reporting CLS without a
+    decimal; suggesting generic "optimise" advice.
+    
+    ## Common pitfalls
+    - Comparing FCP to LCP budget.
+    - Treating warning as pass — verdict must reflect both.
+    - Reporting INP from a navigation-only run.
+    - Using mobile budgets against desktop run or vice versa.
+    
+    ## Examples
+    Pass: LCP 1.9 s, INP 120 ms, CLS 0.04, TTFB 410 ms → verdict `pass`.
+    Fail: LCP 4.6 s (poor), INP 220 ms (NI), CLS 0.32 (poor), TTFB 900 ms
+    (NI) → four findings, verdict `block`.
+    
+    ## Stop condition
+    All four metrics evaluated; findings emitted with fixes; verdict
+    set; no source modified.
+    
+    ## Confidence guidance
+    Multi-run median + throttling documented = 0.97; single run ≤0.92;
+    INP missing because no interaction ≤0.88; throttling unknown ≤0.85.
+    Must be ≥0.95 to emit.
 
 ### Skill: audit-network-waterfall
 
     
     # Skill: audit-network-waterfall
     
-    ## Task
+    ## Purpose
+    Parse a HAR file and flag wasteful network behaviour on initial page
+    load: excess requests, oversized transfer, render-blocking chains,
+    serialised requests, and missing caching. Findings only.
+    Anti-hallucination: every metric must trace to specific entries in
+    the HAR.
     
-    Parse a HAR file and flag:
+    ## When to invoke
+    Plan step requests network perf audit AND HAR captures the load
+    under test from cold cache.
+    Do NOT invoke for: warm-cache captures, partial HARs, or HARs
+    missing timings.
     
-    - > 50 requests on initial load.
-    - > 1 MB transferred above the fold.
-    - Render-blocking requests > 3.
-    - Sequential requests that could be parallelised.
-    - Missing cache headers on static assets.
+    ## Procedure (follow exactly)
+    1. Filter HAR to initial-load entries (before first significant
+       user input; use `pageref` if multi-page).
+    2. Budgets (defaults; override via `budgets`):
+       - Requests ≤ 50.
+       - Transferred bytes above the fold ≤ 1 MB (sum of resources
+         blocking first paint).
+       - Render-blocking requests ≤ 3 (sync `<script>` + non-async CSS).
+       - Sequential dependent requests ≤ 2 long chains.
+       - All static assets MUST have `Cache-Control` with max-age ≥
+         1 day OR `immutable`.
+    3. Identify parallelisable sequences: pairs/chains where request B
+       starts only after A finishes despite no real dependency.
+    4. For each violation emit a finding with measured value, budget,
+       the URLs involved, and a concrete fix (preload, code-split,
+       bundle, add cache header, parallelise).
+    
+    ## How to think
+    - Third-party scripts often dominate — call them out separately;
+      they may be out-of-scope but still violate budgets.
+    - Compression: report `transferSize` (over the wire), not
+      `resource size`.
+    - HTTP/2 multiplexing reduces serialisation pain — still flag
+      long chains based on `startedDateTime` deltas.
+    - Service worker hits do not count as fresh requests; note them.
+    
+    ## Required inputs
+    HAR parseable; covers initial load.
+    
+    ## Output format
+    ```json
+    {"findings": [
+       {"metric": "request_count", "measured": 78, "budget": 50,
+        "severity": "error", "path": "initial-load",
+        "fix": "Bundle 18 icon requests into a sprite; defer 12 analytics calls."}],
+     "verdict": "block", "confidence": 0.96}
+    ```
+    
+    ## Quality criteria
+    Pass: every budget checked against real HAR data; URLs cited;
+    verdict matches severity; cache header rule applied to every static
+    asset.
+    Fail: counting requests after first interaction as initial load;
+    ignoring `Cache-Control: no-store` on assets; suggesting fixes that
+    contradict HAR evidence.
+    
+    ## Common pitfalls
+    - Treating `200 OK from cache` as a fresh request.
+    - Counting preflight OPTIONS twice.
+    - Ignoring `<link rel="modulepreload">` as render-blocking when it
+      is not.
+    - Reporting transfer in MB while comparing to KB budget.
+    
+    ## Examples
+    Pass: 34 requests, 720 KB above fold, 2 render-blocking, all assets
+    cached → verdict `pass`.
+    Fail: 78 requests, 1.6 MB, 6 render-blocking → three findings emitted
+    with concrete consolidation and preload suggestions.
+    
+    ## Stop condition
+    All five rules evaluated; findings emitted with URLs and fixes;
+    verdict set; no source modified.
+    
+    ## Confidence guidance
+    HAR complete + timings present = 0.97; partial timings ≤0.92; warm
+    cache suspected ≤0.85. Must be ≥0.95 to emit.
 
 ### Skill: audit-render-performance
 
     
     # Skill: audit-render-performance
     
-    ## Task
+    ## Purpose
+    Analyse a Chrome DevTools Performance trace captured via Puppeteer and
+    flag long tasks, layout thrash, and excessive re-renders. Findings
+    only. Anti-hallucination: every finding cites a concrete event from
+    the trace, not invented timings.
     
-    Inspect a Puppeteer Performance trace:
+    ## When to invoke
+    Plan step requests render perf audit AND a valid trace file is
+    provided AND the trace covers a representative interaction
+    (navigation or key user action).
+    Do NOT invoke for: server-side rendering perf, traces shorter than
+    1 second, or traces missing the renderer process.
     
-    - Long tasks (> 50ms on the main thread).
-    - Forced synchronous layouts (layout thrash).
-    - > 30 components re-rendering per interaction.
+    ## Procedure (follow exactly)
+    1. Parse the trace JSON (DevTools `traceEvents` array).
+    2. Long tasks (main thread): every event with `dur > 50000` (µs).
+       Default budget: 0 long tasks above 50 ms during the critical path.
+    3. Forced synchronous layouts (layout thrash): occurrences of
+       `Layout` or `UpdateLayoutTree` triggered inside JS execution
+       (i.e. nested under a `FunctionCall`/`v8.run` frame). Default
+       budget: 0.
+    4. Re-render storm: count React commits or component renders
+       (heuristic: `Profile` events or `User Timing` marks if app uses
+       React DevTools profiler integration). Budget: ≤ 30 components
+       per interaction.
+    5. Time to interactive on the trace's main navigation: budget 3.5 s
+       on the captured throttling profile.
+    6. For each violation emit a finding with: metric name, measured
+       value, budget, the offending stack/event name, and a concrete fix
+       (debounce, virtualize, memo, move to worker, defer non-critical).
     
-    Flag each with the offending stack and a fix suggestion.
+    ## How to think
+    - Throttling profile matters — record it from trace metadata; if
+      absent, lower confidence.
+    - A single 80 ms task during idle is less critical than a 60 ms task
+      during input — weight severity by phase.
+    - Memoization advice requires evidence of repeated equal props;
+      otherwise suggest profiling, not a code change.
+    - Devtools extension noise in trace → exclude renderer events from
+      `chrome-extension://` origins.
+    
+    ## Required inputs
+    Trace JSON readable; covers the period under audit.
+    
+    ## Output format
+    ```json
+    {"findings": [
+       {"metric": "long_task_ms", "measured": 312, "budget": 50,
+        "severity": "error", "path": "FunctionCall:renderList",
+        "fix": "Virtualize list (react-window) or chunk via requestIdleCallback."}],
+     "verdict": "block", "confidence": 0.96}
+    ```
+    
+    ## Quality criteria
+    Pass: every long task ≥ 50 ms enumerated; layout thrash counted with
+    trigger stacks; re-render storms flagged with component names where
+    available; verdict matches severity.
+    Fail: summarising without per-event evidence; ignoring the throttling
+    profile; inventing budgets not from defaults or input.
+    
+    ## Common pitfalls
+    - Counting compositor or GPU thread tasks as main-thread long tasks.
+    - Confusing `RecalculateStyles` with `Layout`.
+    - Reporting "many renders" without a count.
+    - Suggesting `React.memo` everywhere without diagnosis.
+    
+    ## Examples
+    Pass: trace shows max main-thread task 38 ms, no layout thrash,
+    verdict `pass`.
+    Fail: 312 ms `renderList` task with nested layouts → finding emitted
+    suggesting virtualization.
+    
+    ## Stop condition
+    Every relevant trace event examined; findings emitted with measured
+    values; verdict set; no source modified.
+    
+    ## Confidence guidance
+    Trace clean + throttling known = 0.97; throttling unknown ≤0.92;
+    re-render counting heuristic only ≤0.88. Must be ≥0.95 to emit.
 
 ### Skill: decompose-task
 
     
     # Skill: decompose-task
     
-    ## Task
+    ## Purpose
+    Convert one validated sprint (or feature goal) into an ordered DAG of plan steps where each step is exactly one skill invocation by one agent. The output is the contract the orchestrator executes; ambiguity here propagates everywhere downstream.
     
-    Break the goal into ordered plan steps. Each step references exactly one
-    skill and one agent.
+    ## When to invoke
+    Invoke when the requirements input is non-empty AND the architecture input names every component the goal touches AND no prior plan_steps array exists for this goal.
+    Do NOT invoke to: re-plan after a failed step (use replan-from-failure), expand a single step (use the relevant decompose-* skill), or break down PRD epics (use group-prd-into-epics).
     
-    ## Invariants
+    ## Procedure (follow exactly)
+    1. Read every acceptance criterion in `requirements`. List them as ACs.
+    2. For each AC, identify the touched components from `architecture`.
+    3. For each touched component, allocate one coding step (frontend, backend, or infra) and immediately allocate its paired testing step.
+    4. Assign exactly one `skill` and one `agent` per step. Never combine skills.
+    5. Wire `depends_on` so that schema/contract steps precede consumers; coding precedes its own test; integration tests depend on all coding steps in their scope.
+    6. Mark `human_gate: true` for any step touching a sensitive surface listed in SPEC.md §4 (auth, billing, secrets, prod deploy, schema migrations on prod data).
+    7. Topologically order the array; verify no cycles before emitting.
     
-    - Every `coding/*` step has a paired `testing/*` step (`test_pair`).
-    - Steps have explicit `depends_on`.
-    - Sensitive-surface steps set `human_gate: true`.
+    ## How to think
+    - Step spans more than one skill → split it.
+    - Step has no test pair → add one before emitting.
+    - AC implies a new architectural component not in `architecture` → STOP and lower confidence; do not invent components.
+    - Two steps appear identical except for path → they are still two steps; do not collapse.
+    
+    ## Required inputs
+    `requirements` must include ACs; `architecture` must enumerate components. If either is missing or vague, STOP and ask human — do not infer.
+    
+    ## Output format
+    ```json
+    {
+      "plan_steps": [
+        {"step_id":"s1","agent":"backend","skill":"implement-endpoint","category":"coding",
+         "inputs":{...},"expected_outputs":["patch"],"depends_on":[],"test_pair":"s2","human_gate":false}
+      ],
+      "rationale":"...",
+      "confidence":0.0
+    }
+    ```
+    
+    ## Quality criteria
+    Passes if: every coding step has a `test_pair`; every `depends_on` references an earlier `step_id`; every sensitive-surface step has `human_gate: true`; no step references two skills; every AC maps to ≥1 step.
+    Fails if: any cycle; any orphan step (no AC covered); any step missing `agent` or `skill`; any sensitive-surface step without `human_gate`.
+    
+    ## Common pitfalls
+    - Folding "implement + test" into one step.
+    - Omitting `depends_on` for steps that read another step's artifact.
+    - Skipping the `human_gate` flag on auth/payment/migration work.
+    - Inventing component names absent from `architecture`.
+    - Producing parallel steps that secretly write the same file (use sequencing).
+    
+    ## Examples
+    ✅ Goal "add /v1/sessions endpoint": s1=design-schema → s2=implement-endpoint (test_pair=s3) → s3=write-integration-test → s4=document-endpoint. depends_on chain is linear.
+    ❌ Anti-pattern: one step "build sessions feature" with skill `implement-feature`, no test pair, no schema step, no human_gate even though sessions writes auth tokens.
+    
+    ## Stop condition
+    Every AC is covered by ≥1 step; every coding step has a test_pair; DAG is acyclic; output validates against the schema above.
+    
+    ## Confidence guidance
+    Lower when: ACs ambiguous (≤0.7), architecture incomplete (≤0.65), sensitive surface unclear (≤0.7), >15 steps required (≤0.8). ≥0.85 required to emit without human gate.
 
 ### Skill: estimate-effort
 
     
     # Skill: estimate-effort
     
-    ## Task
+    ## Purpose
+    Assign a calibrated t-shirt size to each plan step and a single rolled-up total. The estimate gates whether a sprint can absorb the plan and signals where to split work that is too coarse.
     
-    Assign a t-shirt size (XS/S/M/L/XL) to each plan step. Sum to a total.
+    ## When to invoke
+    Invoke when `plan_steps` is non-empty AND every step has a `skill` and `agent` assigned. Run once per plan, after `decompose-task` and before `sequence-dependencies`.
+    Do NOT invoke to: estimate stories in points (use estimate-story-points), produce wall-clock time, or commit to deadlines.
     
-    ## Output
+    ## Procedure (follow exactly)
+    1. For each step, classify by skill type: pure config (XS), single file edit (S), single component with paired test (M), cross-cutting refactor (L), multi-surface or migration (XL).
+    2. Adjust up one size if `human_gate: true` (review overhead).
+    3. Adjust up one size if `depends_on` length ≥ 3 (integration overhead).
+    4. Cap any single step at XL; if a step naturally exceeds XL, STOP and require the caller to re-decompose.
+    5. Compute `total` using the rollup table below (not arithmetic mean).
+    6. Emit per-step and total; include rationale citing outliers.
     
+    ## How to think
+    - Step touches only YAML/JSON config → XS regardless of file count under 3.
+    - Step changes a schema consumed by ≥2 other steps → at least M, often L.
+    - Step is "wire-up only" but spans 3+ files → S becomes M.
+    - Estimate feels like a coin flip between two sizes → pick the larger and note in rationale.
+    
+    ## Required inputs
+    `plan_steps` must contain `skill`, `agent`, and `depends_on`. Missing fields → STOP and ask for completed decomposition.
+    
+    ## Output format
     ```json
-    {"per_step": {"<step_id>": "S"}, "total": "M"}
+    {"effort_estimate":{"per_step":{"s1":"S","s2":"M"},"total":"L"},
+     "rationale":"...","confidence":0.0}
     ```
+    
+    Rollup table:
+    - ≤3 S-or-smaller → S
+    - mix of S/M with no L → M
+    - ≥1 L → L
+    - ≥1 XL or ≥3 L → XL
+    
+    ## Quality criteria
+    Passes if: every `step_id` in `plan_steps` has an entry; no step exceeds XL; rollup matches the table; rationale names the largest 1-2 steps.
+    Fails if: missing step; arithmetic-mean rollup; XL step not flagged for re-decomposition; rationale absent or generic.
+    
+    ## Common pitfalls
+    - Averaging sizes numerically (S=1, M=2…) instead of using the rollup table.
+    - Treating test pairs as "free" — they are at least S each.
+    - Ignoring human-gate overhead.
+    - Calling a migration step M because the diff is small.
+    
+    ## Examples
+    ✅ 4 steps: s1=XS (config), s2=M (endpoint), s3=S (test), s4=M (frontend wire). Total=M. Rationale notes endpoint and frontend are the long poles.
+    ❌ Anti-pattern: averaging to "S" when one step is XL, hiding the risk.
+    
+    ## Stop condition
+    Every step sized; total derived from the rollup table; no step at XL without an attached re-decomposition warning.
+    
+    ## Confidence guidance
+    Lower when: unfamiliar skill (≤0.75), step crosses ≥3 components (≤0.7), data missing on `depends_on` (≤0.7). ≥0.85 required.
 
 ### Skill: sequence-dependencies
 
     
     # Skill: sequence-dependencies
     
-    ## Task
+    ## Purpose
+    Produce a deterministic topological order of plan steps so the orchestrator can execute them. Detect cycles and dependency violations before execution begins.
     
-    Topologically order plan steps. Fail if a cycle is detected.
+    ## When to invoke
+    Invoke when `plan_steps` is populated AND every step has a `depends_on` field (possibly empty).
+    Do NOT invoke to: estimate effort (use estimate-effort), split steps further (use decompose-task), or schedule across sprints (use sequence-sprints).
+    
+    ## Procedure (follow exactly)
+    1. Build adjacency list: edge from each entry in `depends_on` to the step.
+    2. Run Kahn's algorithm (in-degree based topological sort). Break ties by ascending `step_id` for determinism.
+    3. If any node remains with in-degree > 0 after the sort, a cycle exists — STOP and emit a finding listing the cycle nodes; do not produce `ordered_steps`.
+    4. Verify every `depends_on` target exists in `plan_steps`. Unknown reference → STOP.
+    5. Identify the critical path (longest chain). Note parallelizable groups (same depth) in rationale.
+    6. Emit the ordered array preserving original step records.
+    
+    ## How to think
+    - Two steps both depend on the same artifact → they may run in parallel; do not invent a fake dependency to serialize them.
+    - Test step has `test_pair` but no `depends_on` on its code step → add the dependency before sorting.
+    - Step depends on itself → cycle; STOP.
+    - All steps independent → flat order by `step_id`; rationale notes full parallelism.
+    
+    ## Required inputs
+    Every step must carry `step_id` and `depends_on` (array, may be empty). Missing → STOP.
+    
+    ## Output format
+    ```json
+    {"ordered_steps":[{...step...},{...}],
+     "rationale":"critical path: s1→s3→s5; s2 and s4 parallel.",
+     "confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: order respects every `depends_on`; ties broken by `step_id`; cycle detection report present when applicable; rationale names the critical path.
+    Fails if: any edge violated; nondeterministic ordering; cycle silently dropped; missing dependency target ignored.
+    
+    ## Common pitfalls
+    - Using DFS without tie-break — produces nondeterministic output.
+    - Treating `test_pair` as a dependency edge automatically (it isn't unless declared in `depends_on`).
+    - Reporting "no cycle" when an unknown step_id reference exists.
+    - Adding artificial dependencies to flatten the DAG.
+    
+    ## Examples
+    ✅ s1 (no deps) → s2 (deps s1) → s3 (deps s1) → s4 (deps s2,s3). Output order: s1,s2,s3,s4. Rationale: critical path s1→s2→s4; s3 parallel with s2.
+    ❌ Anti-pattern: emitting s2 before s1 because s2's step_id sorts first; ignoring that s2 depends on s1.
+    
+    ## Stop condition
+    Ordered array emitted, every dependency respected, ties broken by `step_id`, OR a cycle finding emitted with the offending nodes named.
+    
+    ## Confidence guidance
+    Lower when: cycle detected (force 0.0 and STOP), missing dependency target (≤0.5), >30 steps with dense edges (≤0.8). ≥0.85 required.
 
 ### Skill: assemble-prd
 
     
     # Skill: assemble-prd
     
-    ## Task
+    ## Purpose
+    Stitch the nine section drafts into a single Markdown file at `docs/prd/<slug>.md` in the fixed canonical order. This is the final author step before the prd-reviewer pipeline runs.
     
-    Stitch the section drafts into `docs/prd/<slug>.md` in this fixed order:
+    ## When to invoke
+    Invoke once per PRD, after all nine section drafts exist (eight authored + Open Questions, which may be carried through from upstream skills' open_questions lists).
     
-    1. Executive Summary
-    2. Problem Statement
-    3. Goals & Non-Goals
-    4. User Personas
-    5. Functional Requirements
-    6. Non-Functional Requirements
-    7. Success Metrics
-    8. Out of Scope
-    9. Open Questions
+    Do NOT invoke to: edit a section's content (run the section's authoring skill), review the assembled PRD (use the check-prd-* skills), or score readiness (use score-prd-readiness).
+    
+    ## Procedure (follow exactly)
+    1. Validate `sections` contains all nine keys (case-sensitive):
+       `Executive Summary`, `Problem Statement`, `Goals & Non-Goals`, `User Personas`, `Functional Requirements`, `Non-Functional Requirements`, `Success Metrics`, `Out of Scope`, `Open Questions`.
+       Missing keys -> STOP and route back to the missing section's author.
+    2. Validate `slug` matches `^[a-z0-9]+(-[a-z0-9]+)*$`. If not, STOP and ask human.
+    3. Compose the file in this fixed order (no reordering):
+       1. Title `# PRD: <slug>` (human readable form: replace dashes with spaces, title-case).
+       2. `## Executive Summary`
+       3. `## Problem Statement`
+       4. `## Goals & Non-Goals`
+       5. `## User Personas`
+       6. `## Functional Requirements`
+       7. `## Non-Functional Requirements`
+       8. `## Success Metrics`
+       9. `## Out of Scope`
+       10. `## Open Questions`
+    4. Each section's body is the markdown from `sections[<name>]`, stripped of its own top-level `##` header if duplicated (avoid double headers).
+    5. Write to `docs/prd/<slug>.md`. If the file exists, overwrite only after confirming the human has approved replacement; otherwise write to `docs/prd/<slug>.draft.md` and surface.
+    6. Scan the final file for unresolved placeholders: `<TBD`, `<...>`, `TODO`. If any remain, lower confidence and list them in `open_questions`.
+    7. Return the absolute path.
+    
+    ## How to think
+    - Section header already in body -> strip once; do not double-stack.
+    - Section content empty -> do not write blank section; STOP and route back.
+    - Slug missing -> derive from Executive Summary's product name only if obvious; otherwise ask human.
+    - Don't reorder. Order is a contract every downstream reviewer depends on.
+    
+    ## Required inputs
+    `sections` map with all nine keys, each non-empty. `slug` matching the regex. If either invalid, STOP.
+    
+    ## Output format
+    {
+      "prd_path": "/abs/path/to/docs/prd/<slug>.md",
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: file written; all nine `## ` headings present and in canonical order; no duplicate headings; no unresolved placeholders; file parses as valid Markdown.
+    Fails if: any heading missing or out of order; duplicate headings; placeholders remain; file written outside `docs/prd/`.
+    
+    ## Common pitfalls
+    - Reordering Success Metrics before Goals to "flow better" — order is fixed.
+    - Writing to `docs/<slug>.md` instead of `docs/prd/<slug>.md`.
+    - Overwriting an approved PRD without human confirmation.
+    - Concatenating sections without blank lines between, breaking Markdown rendering.
+    
+    ## Examples
+    Good final structure:
+    # PRD: Quiz Loop
+    
+    ## Executive Summary
+    ...
+    
+    ## Problem Statement
+    ...
+    
+    ## Goals & Non-Goals
+    ...
+    
+    ## User Personas
+    ...
+    
+    ## Functional Requirements
+    ...
+    
+    ## Non-Functional Requirements
+    ...
+    
+    ## Success Metrics
+    ...
+    
+    ## Out of Scope
+    ...
+    
+    ## Open Questions
+    ...
+    
+    Bad:
+    # PRD
+    ## Goals
+    ## Executive Summary  (wrong order, generic title)
     
     ## Stop condition
+    File written at `docs/prd/<slug>.md` (or `.draft.md` if pending approval); all nine headings present in order; no unresolved placeholders or all listed in open_questions; confidence reported.
     
-    All nine headings present; file parses as valid Markdown; no unresolved
-    `<...>` placeholders.
+    ## Confidence guidance
+    Lower confidence when:
+    - Any placeholders remain after assembly -> <= 0.7
+    - Slug was inferred rather than provided -> <= 0.8
+    - Open Questions section was synthesized rather than authored -> <= 0.75
+    - Sections had to be lightly reformatted to fit -> <= 0.8
+    Confidence >= 0.85 is required to proceed without human review.
 
 ### Skill: check-prd-ambiguity
 
     
     # Skill: check-prd-ambiguity
     
-    ## Task
+    ## Purpose
+    Scan the PRD for ambiguous quantifiers, weasel words, and pronouns lacking a referent. Each finding cites the exact phrase and a clarification question. Never rewrite the PRD.
     
-    Scan for ambiguous quantifiers and pronouns: "some", "many", "appropriate",
-    "reasonable", "etc.", "and so on", "it", "they" without a referent.
+    ## When to invoke
+    Invoke after completeness passes. Can run in parallel with check-prd-testability and check-prd-conflicts.
+    
+    Do NOT invoke to: rewrite ambiguous text (review only), check section presence (use check-prd-completeness), or judge metric quality (use check-prd-metrics-quality).
+    
+    ## Procedure (follow exactly)
+    1. Read `prd_path`.
+    2. For each section, scan for these classes of ambiguity:
+       a. Vague quantifiers: "some", "many", "few", "several", "various", "multiple" without a number.
+       b. Weasel words: "appropriate", "reasonable", "suitable", "as needed", "where possible", "robust", "seamless".
+       c. Open-ended enumerations: "etc.", "and so on", "and similar", "...".
+       d. Unanchored pronouns: "it", "they", "this", "these", "that" without a clear antecedent in the same sentence or the immediately preceding sentence.
+       e. Hedges that change meaning: "typically", "generally", "usually", "often" applied to requirements.
+    3. For each match, emit a finding with:
+       - `section` — heading name where the phrase appears.
+       - `kind` — `"ambiguous"`.
+       - `msg` — the exact phrase quoted with surrounding 5-10 words for context.
+       - `fix` — a one-sentence clarification question (not a rewrite), e.g. "How many is 'several' here — 2, 5, 20?"
+    4. Verdict `pass` iff zero findings; else `revise`.
+    5. `readiness_score` = 1.0 - 0.05 * count(findings), floor 0.0.
+    
+    ## How to think
+    - The same vague word appears 5 times in one paragraph -> emit 5 findings (one per occurrence) so authors fix them all.
+    - A pronoun whose referent is obvious from prior sentence -> NOT a finding.
+    - Quoted user research ("teachers said 'it should be easy'") -> NOT a finding; that's source data, not a requirement.
+    - "etc." inside an Open Questions list -> NOT a finding; the section's purpose is enumerating unknowns.
+    - NEVER rewrite. The fix is always a clarifying question.
+    
+    ## Required inputs
+    `prd_path` readable. If missing, STOP and ask human.
+    
+    ## Output format
+    {
+      "findings": [
+        {"section": "Functional Requirements", "kind": "ambiguous", "msg": "FR-2: 'support several integrations' — 'several' is vague.", "fix": "How many integrations — name each one or give a count."}
+      ],
+      "verdict": "pass|revise",
+      "readiness_score": 0.0,
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: every section scanned; each finding quotes the exact phrase with context; fix is a clarifying question, not a rewrite; verdict and score consistent.
+    Fails if: findings omit the phrase quote; rewrites suggested; verdict inconsistent.
+    
+    ## Common pitfalls
+    - Flagging "it" when antecedent is plain.
+    - Skipping a section because it "looked clean".
+    - Misreading domain jargon as weasel words.
+    - Suggesting a concrete rewrite — the author owns rewrites.
+    
+    ## Examples
+    Good finding:
+    {"section": "User Personas", "kind": "ambiguous", "msg": "'teachers often use Chromebooks' — 'often' makes the constraint optional.", "fix": "Is Chromebook the required device, or one of N — list devices and frequency."}
+    
+    Good finding:
+    {"section": "Non-Functional Requirements", "kind": "ambiguous", "msg": "'NFR-4: appropriate uptime SLO' — 'appropriate' is undefined.", "fix": "Specify the SLO percentage and measurement window."}
+    
+    Bad finding:
+    {"section": "...", "kind": "ambiguous", "msg": "rewrote it to be clearer", "fix": "..."} (rewrites)
     
     ## Stop condition
+    Every section scanned; findings emitted for every offending phrase; verdict and readiness_score consistent; confidence reported.
     
-    Findings list every ambiguous phrase with a clarification question.
+    ## Confidence guidance
+    Lower confidence when:
+    - Domain jargon resembles weasel words but is precise within the field -> <= 0.9
+    - Pronoun antecedent is plausible but not certain -> <= 0.9
+    - The section's intent allows looser language (Open Questions) -> <= 0.9
+    - Many borderline matches require judgment -> <= 0.85
+    Confidence >= 0.95 is required to proceed without human review.
 
 ### Skill: check-prd-completeness
 
     
     # Skill: check-prd-completeness
     
-    ## Task
+    ## Purpose
+    Verify the PRD contains all nine canonical sections, each non-empty and non-skeleton. Emit a findings list; never rewrite the PRD.
     
-    Verify the PRD has all nine required sections (see `assemble-prd`) and
-    each is non-empty. Flag empty/skeleton sections as `missing`.
+    ## When to invoke
+    Invoke after `assemble-prd` writes a PRD file, before downstream review skills (testability, ambiguity, conflicts, metrics-quality) run.
+    
+    Do NOT invoke to: judge content quality (other check-prd-* skills do that), score overall readiness (use score-prd-readiness), or edit the PRD (reviewers never edit).
+    
+    ## Procedure (follow exactly)
+    1. Read the file at `prd_path`. If unreadable or missing, STOP and ask human.
+    2. Verify these nine `## ` headings are present in this order:
+       `Executive Summary`, `Problem Statement`, `Goals & Non-Goals`, `User Personas`, `Functional Requirements`, `Non-Functional Requirements`, `Success Metrics`, `Out of Scope`, `Open Questions`.
+    3. For each heading, classify the section body:
+       a. `missing` — heading absent entirely.
+       b. `empty` — heading present, body is whitespace or fewer than 20 non-whitespace characters.
+       c. `skeleton` — body contains only placeholders (`<TBD>`, `<...>`, `TODO`, lorem ipsum, copy of the template).
+       d. `present` — body has real content.
+    4. Emit one finding per non-`present` classification with kind `missing`, `empty`, or `skeleton`.
+    5. Verdict `pass` iff all nine sections are `present`. Otherwise `revise`.
+    6. Compute `readiness_score` for this dimension = 1.0 - 0.15 * count(non-present), floor 0.0.
+    
+    ## How to think
+    - A short but real section (e.g. a one-sentence Problem Statement) is `present`, not `empty`.
+    - A heading with a single bullet that says "TBD" is `skeleton`, not `present`.
+    - Wrong heading text ("## Exec Summary") -> count as `missing` for the canonical name; do not coerce.
+    - Out-of-order headings still satisfy completeness for THIS check (order is enforced by assemble-prd); only presence matters here.
+    - NEVER rewrite. NEVER infer content. Only report.
+    
+    ## Required inputs
+    `prd_path` must point to a readable file. If not, STOP.
+    
+    ## Output format
+    {
+      "findings": [
+        {"section": "User Personas", "kind": "missing|empty|skeleton", "msg": "string", "fix": "string"}
+      ],
+      "verdict": "pass|revise",
+      "readiness_score": 0.0,
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: every one of the nine canonical sections evaluated; kinds drawn from {missing, empty, skeleton}; verdict matches findings; readiness_score computed via stated formula.
+    Fails if: sections skipped; kinds outside the enum; verdict inconsistent with findings; PRD content modified.
+    
+    ## Common pitfalls
+    - Marking a terse-but-real section as `empty`.
+    - Coercing a misnamed heading to the canonical name silently.
+    - Confusing this skill with check-prd-testability (which is about FR/NFR quality, not presence).
+    - Inventing fixes that rewrite content; fixes here name what to add, not what to write.
+    
+    ## Examples
+    Good finding:
+    {"section": "Out of Scope", "kind": "missing", "msg": "No '## Out of Scope' heading found.", "fix": "Run write-out-of-scope and re-assemble."}
+    
+    Good finding:
+    {"section": "Success Metrics", "kind": "skeleton", "msg": "Body is only 'TBD - need analytics input'.", "fix": "Run write-success-metrics with confirmed baseline/source per goal."}
+    
+    Bad finding:
+    {"section": "Problem Statement", "kind": "weak", "msg": "I rewrote it", "fix": "..."} (kind invented, rewrites)
     
     ## Stop condition
+    All nine sections classified; findings emitted only for non-present sections; verdict and readiness_score consistent with findings; confidence reported.
     
-    Findings list every missing or empty section by name.
+    ## Confidence guidance
+    Lower confidence when:
+    - File contains unconventional formatting that obscures heading detection -> <= 0.85
+    - Skeleton vs present is borderline for any section -> <= 0.9
+    - Headings present but use slightly different wording -> <= 0.9
+    - File encoding or markdown anomalies encountered -> <= 0.85
+    Confidence >= 0.95 is required to proceed without human review.
 
 ### Skill: check-prd-conflicts
 
     
     # Skill: check-prd-conflicts
     
-    ## Task
+    ## Purpose
+    Detect contradictions across PRD sections — goals vs non-goals, FR vs NFR, persona constraint vs FR, metric vs goal. Cite both sides of every conflict. Never rewrite.
     
-    Detect contradictions between sections — e.g. a goal that contradicts a
-    non-goal, an FR that contradicts an NFR (perf vs. completeness), a
-    persona constraint that contradicts an FR.
+    ## When to invoke
+    Invoke after completeness passes. Can run in parallel with check-prd-testability and check-prd-ambiguity. Conflicts often surface after FR and NFR drafts are complete.
+    
+    Do NOT invoke to: judge testability (use check-prd-testability), score metrics quality (use check-prd-metrics-quality), or repair conflicts (review only).
+    
+    ## Procedure (follow exactly)
+    1. Read `prd_path`. Build a mental map of: goals, non-goals, personas (with constraints), FRs, NFRs, metrics, out-of-scope items.
+    2. Apply these conflict patterns:
+       a. Goal vs Non-Goal — a goal asserts an outcome that a non-goal forbids.
+       b. Goal vs Out-of-Scope — a goal requires a capability listed as out-of-scope.
+       c. FR vs NFR — an FR's behavior cannot coexist with an NFR's bound (e.g. FR requires full-table scan response, NFR caps p95 at 50ms with no scan budget).
+       d. Persona constraint vs FR — persona has constraint X (e.g. no install rights) but FR requires X-violating capability (e.g. installed desktop client).
+       e. Metric vs Goal — a target value conflicts with the direction of the goal (goal: reduce X; target: increase X).
+       f. NFR vs NFR — e.g. unlimited retention vs strict deletion deadline.
+    3. For each conflict, emit a finding with:
+       - `section` — primary section where conflict surfaces (use comma-separated section names).
+       - `kind` — `"conflicting"`.
+       - `msg` — quote both sides with ids ("FR-2 vs NFR-1: FR-2 requires X while NFR-1 forbids X").
+       - `fix` — one-sentence direction for resolution (NOT a rewrite of either side).
+    4. Verdict `pass` iff zero findings. Otherwise `revise`.
+    5. `readiness_score` = 1.0 - 0.15 * count(findings), floor 0.0.
+    
+    ## How to think
+    - Two items look related but do not actually contradict -> NOT a conflict; do not flag.
+    - A "tension" (perf vs completeness) is not automatically a conflict; only flag if both sides cannot simultaneously be satisfied as stated.
+    - Subtle conflicts: a goal "minimize teacher time" and an FR forcing multi-step confirmation -> conflict only if FR clearly bloats time without a non-goal carve-out.
+    - Conflict only inside the Open Questions section -> not a conflict (open questions enumerate unknowns).
+    - NEVER rewrite. NEVER pick a side. The author resolves.
+    
+    ## Required inputs
+    `prd_path` readable; all nine sections present. If any are missing, STOP and route to check-prd-completeness.
+    
+    ## Output format
+    {
+      "findings": [
+        {"section": "Functional Requirements, Non-Functional Requirements", "kind": "conflicting", "msg": "FR-4 requires offline write while NFR-3 mandates immediate server-side persistence.", "fix": "Decide whether offline writes are queued or whether the FR is reduced; update both sides."}
+      ],
+      "verdict": "pass|revise",
+      "readiness_score": 0.0,
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: every conflict pattern checked; findings cite ids on both sides; fixes direct authors to a decision; verdict and score consistent.
+    Fails if: findings cite only one side; flagging tensions that can coexist; rewrites suggested; verdict inconsistent.
+    
+    ## Common pitfalls
+    - Confusing prioritization tradeoffs with logical conflicts.
+    - Missing constraint-vs-FR conflicts because the persona section was read in isolation.
+    - Citing a conflict without naming the offending item ids.
+    - Suggesting which side wins — that is the author's call.
+    
+    ## Examples
+    Good finding:
+    {"section": "Goals & Non-Goals, Out of Scope", "kind": "conflicting", "msg": "Goal 'enable parent visibility into quiz results' conflicts with Out of Scope item 'Parent-facing portal'.", "fix": "Either remove the goal or move the parent portal into scope; current pair is inconsistent."}
+    
+    Good finding:
+    {"section": "User Personas, Functional Requirements", "kind": "conflicting", "msg": "Persona K-8 teacher constraint 'no install rights' conflicts with FR-7 'teacher SHALL install the desktop sync client'.", "fix": "Re-architect FR-7 as a web flow or scope the persona to admins; resolve before assemble."}
+    
+    Bad finding:
+    {"section": "...", "kind": "tension", "msg": "These feel in tension", "fix": "..."} (kind invented, vague)
     
     ## Stop condition
+    All conflict patterns examined; findings cite both sides with ids; verdict and readiness_score consistent; confidence reported.
     
-    Findings list every conflicting pair with both citations.
+    ## Confidence guidance
+    Lower confidence when:
+    - Conflict depends on numbers not stated explicitly -> <= 0.9
+    - One side appears in Open Questions (i.e. unresolved) -> <= 0.9
+    - Persona constraints are inferred not stated -> <= 0.85
+    - Tradeoff vs conflict is judgment-heavy -> <= 0.85
+    Confidence >= 0.95 is required to proceed without human review.
 
 ### Skill: check-prd-metrics-quality
 
     
     # Skill: check-prd-metrics-quality
     
-    ## Task
+    ## Purpose
+    Audit every entry in the Success Metrics section for the four mandatory fields (baseline, target, window, source), reject vanity metrics, and verify each metric maps back to a stated goal. Findings only; never rewrite.
     
-    For each success metric, check it has: baseline, target, window, source.
-    Flag vanity metrics (totals without rates), missing baselines, and
-    targets that don't pair to a goal.
+    ## When to invoke
+    Invoke after `check-prd-completeness` passes. Can run in parallel with the other PRD review skills.
+    
+    Do NOT invoke to: judge goal quality (use check-prd-conflicts), score readiness (use score-prd-readiness), or fix the metrics (review only).
+    
+    ## Procedure (follow exactly)
+    1. Read `prd_path`. Extract the Success Metrics section and the Goals & Non-Goals section.
+    2. Parse each metric entry. Expected structure (per `write-success-metrics`):
+       - `Metric`: name
+       - `Baseline`: value + date
+       - `Target`: value + measurement window
+       - `Source`: event / dashboard / query
+       Plus the parent `Goal` it lives under.
+    3. For each metric emit a finding with kind from this enum if defective:
+       - `missing-field` — any of {Baseline, Target, Source, parent Goal link} absent.
+       - `vanity` — measures a total without a rate (e.g. "total signups" with no per-period rate or conversion).
+       - `unmapped` — metric has no parent goal in the Goals & Non-Goals section.
+       - `direction-mismatch` — target direction contradicts the goal (goal says "reduce X", target raises X).
+       - `unmeasurable` — Source field names a system that does not exist in the project today, OR is "TBD".
+    4. For each finding include a one-sentence `fix` (clarifying directive, NOT a rewrite).
+    5. Verdict `pass` iff zero findings. Otherwise `revise`.
+    6. `readiness_score` = 1.0 - 0.10 * count(findings), floor 0.0.
+    
+    ## How to think
+    - A metric without a baseline but with a stated "currently unmeasured" disclaimer -> still flag as `missing-field`; the disclaimer doesn't make it measurable.
+    - "Total signups" with target "increase by 20% MoM" -> NOT vanity, it carries a rate.
+    - A metric mapped to a non-goal -> flag as `unmapped` (non-goals are not goals).
+    - Borderline source ("Mixpanel — to be configured") -> flag as `unmeasurable`; lower confidence.
+    - Multiple defects on one metric -> single finding listing all kinds in `msg`, not multiple findings.
+    - NEVER rewrite. The `fix` is direction only.
+    
+    ## Required inputs
+    `prd_path` readable; Success Metrics and Goals & Non-Goals sections present. If either missing, STOP and route back to check-prd-completeness.
+    
+    ## Output format
+    {
+      "findings": [
+        {"section": "Success Metrics", "kind": "missing-field|vanity|unmapped|direction-mismatch|unmeasurable", "msg": "<metric name>: <specific defect with field names>", "fix": "<one sentence clarifying directive>"}
+      ],
+      "verdict": "pass|revise",
+      "readiness_score": 0.0,
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: every metric examined; defects cited with the metric name and field; fixes are concrete directives, not rewrites; verdict and score consistent with findings.
+    Fails if: metrics skipped; vague findings without metric names; kinds invented; rewrites embedded in the `fix`; verdict inconsistent.
+    
+    ## Common pitfalls
+    - Flagging a real rate metric ("p95 latency") as vanity because the name contains "total".
+    - Missing the goal mapping check — a metric can have all four fields but no goal.
+    - Counting "TBD" in Source as acceptable.
+    - Suggesting which instrumentation to add — that's an architecture decision.
+    
+    ## Examples
+    Good finding:
+    {"section": "Success Metrics", "kind": "missing-field", "msg": "Time-to-first-quiz: Baseline absent.", "fix": "Capture the current median time-to-first-quiz before merging."}
+    
+    Good finding:
+    {"section": "Success Metrics", "kind": "vanity", "msg": "Total signups: no rate/window. Target '10000 signups' has no time bound.", "fix": "Convert to a rate (per month) or pair with a conversion ratio."}
+    
+    Good finding:
+    {"section": "Success Metrics", "kind": "unmapped", "msg": "Daily active users metric does not map to any goal in Goals & Non-Goals.", "fix": "Either add a goal that DAU measures, or drop the metric."}
+    
+    Bad finding:
+    {"section": "Success Metrics", "kind": "wrong", "msg": "I rewrote it", "fix": "..."} (kind invented, rewrites)
     
     ## Stop condition
+    Every metric examined; findings emitted only for defective ones; verdict and readiness_score consistent; confidence reported.
     
-    Findings list every defective metric with the missing field named.
+    ## Confidence guidance
+    Lower confidence when:
+    - Metric structure varies from the template -> <= 0.9
+    - Goal mapping is implicit rather than explicit -> <= 0.9
+    - "Vanity vs rate" is borderline judgment -> <= 0.9
+    - Source names a system whose existence is uncertain -> <= 0.85
+    Confidence >= 0.95 is required to proceed without human review.
 
 ### Skill: check-prd-testability
 
     
     # Skill: check-prd-testability
     
-    ## Task
+    ## Purpose
+    Audit every Functional Requirement and Non-Functional Requirement for testability. An item is testable when its outcome is observable from outside the system and (for NFRs) carries a number or named standard. Emit findings; never rewrite.
     
-    Each FR and NFR must be testable. Flag any that:
+    ## When to invoke
+    Invoke after `check-prd-completeness` passes (or after FR and NFR sections are confirmed present). Run before scoring readiness.
     
-    - Uses adjectives without numbers ("fast", "intuitive").
-    - Lacks an observable trigger.
-    - Refers to internal state with no external symptom.
+    Do NOT invoke to: enforce numbering format (that is completeness), find conflicts (use check-prd-conflicts), or score metrics quality (use check-prd-metrics-quality).
+    
+    ## Procedure (follow exactly)
+    1. Read `prd_path`. Extract the Functional Requirements list and Non-Functional Requirements list.
+    2. For each FR, flag `untestable` if any of:
+       a. Uses subjective adjectives without numbers ("fast", "intuitive", "easy", "robust", "scalable").
+       b. Lacks an observable trigger (no "when <event>" clause or the trigger is "as needed", "appropriately").
+       c. References internal state with no external symptom ("the system SHALL index records").
+       d. Uses weak verbs ("should", "may", "could") instead of SHALL.
+    3. For each NFR, flag `untestable` if any of:
+       a. No number AND no named standard (WCAG 2.2 AA, SOC2, FERPA, etc.).
+       b. Subjective claim ("highly secure") not backed by a measurable outcome.
+       c. Compound NFR mixing two categories without separable metrics.
+    4. For each flagged item, emit a finding with kind `untestable` and a concrete `fix` rewrite suggestion (one sentence) — the fix is advice, not an authored replacement.
+    5. Verdict `pass` iff zero findings. Otherwise `revise`.
+    6. `readiness_score` = 1.0 - 0.1 * count(findings), floor 0.0.
+    
+    ## How to think
+    - Borderline subjective adjective with adjacent number -> testable; do not flag.
+    - Internal-sounding behavior with externally observable symptom -> rewrite the FR mentally; if the symptom IS observable, it's testable even if poorly phrased; flag only if no symptom exists.
+    - NFR cites a named standard (e.g. WCAG 2.2 AA) without a number -> testable; the standard is the metric.
+    - Multiple offenses in one FR -> single finding listing each, not multiple findings on the same id.
+    - NEVER rewrite the PRD. The `fix` is a recommendation only.
+    
+    ## Required inputs
+    `prd_path` readable; FR and NFR sections present. If either section is missing, STOP and route back to check-prd-completeness first.
+    
+    ## Output format
+    {
+      "findings": [
+        {"section": "Functional Requirements|Non-Functional Requirements", "kind": "untestable", "msg": "FR-3 uses 'intuitive' with no numeric threshold", "fix": "Replace with a measurable outcome, e.g. 'p95 task completion < 60s on first attempt'"}
+      ],
+      "verdict": "pass|revise",
+      "readiness_score": 0.0,
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: every FR and NFR examined; offenses precisely cited with item id; fixes are concrete one-sentence suggestions; verdict and score consistent.
+    Fails if: items skipped; vague findings without item ids; PRD modified; kinds outside `untestable`.
+    
+    ## Common pitfalls
+    - Flagging an FR that references an internal data store but produces an observable user-visible result.
+    - Missing weak-verb violations because the sentence "sounds" formal.
+    - Flagging an NFR that cites WCAG 2.2 AA as numberless.
+    - Suggesting fixes that introduce tech ("use Cypress to test it").
+    
+    ## Examples
+    Good finding:
+    {"section": "Functional Requirements", "kind": "untestable", "msg": "FR-5 says 'the system should feel responsive' — weak verb and subjective.", "fix": "Use SHALL with a measurable trigger and outcome, e.g. 'the system SHALL respond to a click within 200ms p95'."}
+    
+    Good finding:
+    {"section": "Non-Functional Requirements", "kind": "untestable", "msg": "NFR-2 'scalable for many users' has no peak-load number.", "fix": "State a peak number, e.g. '50,000 concurrent sessions during 8-9am'."}
+    
+    Bad finding:
+    {"section": "Functional Requirements", "kind": "weak", "msg": "I rewrote FR-5", "fix": "..."} (kind invented, rewrites)
     
     ## Stop condition
+    Every FR and NFR examined; findings emitted only for offenders; verdict and readiness_score consistent with findings; confidence reported.
     
-    Findings list every untestable requirement with a concrete rewrite.
+    ## Confidence guidance
+    Lower confidence when:
+    - Adjectives are borderline-subjective and judgment-heavy -> <= 0.9
+    - Standards mentioned but versions ambiguous -> <= 0.9
+    - FR phrasing suggests external symptom but doesn't state it -> <= 0.85
+    - NFR mixes categories making evaluation ambiguous -> <= 0.85
+    Confidence >= 0.95 is required to proceed without human review.
 
 ### Skill: score-prd-readiness
 
     
     # Skill: score-prd-readiness
     
-    ## Task
+    ## Purpose
+    Aggregate findings from all PRD check skills into one 0.0-1.0 readiness score and a `pass|revise` verdict. The score determines whether the PRD proceeds to the architect or returns to the prd-author. Deterministic formula; no judgement.
     
-    Aggregate findings into a 0.0–1.0 readiness score and a `pass|revise`
-    verdict.
+    ## When to invoke
+    Invoke as the FINAL prd-reviewer skill, after all five check-prd-* skills have run and their findings are collected. Run exactly once per review pass.
     
-    ## Scoring
+    Do NOT invoke to: emit individual findings (each check-prd-* skill does that), gate the architect hand-off (the orchestrator does that based on this verdict), or rewrite the PRD.
     
-    ```
-    score = 1.0
-      - 0.20 per `missing`
-      - 0.15 per `conflicting`
-      - 0.10 per `untestable`
-      - 0.05 per `ambiguous`
-    floor at 0.0
-    verdict = "pass" if score >= 0.85 else "revise"
-    ```
+    ## Procedure (follow exactly)
+    1. Receive the aggregated `findings` array. Count occurrences by kind:
+       - n_missing      — `kind` in {missing, empty, skeleton} from check-prd-completeness
+       - n_conflicting  — `kind == "conflicting"` from check-prd-conflicts
+       - n_untestable   — `kind == "untestable"` from check-prd-testability
+       - n_metric       — `kind` in {missing-field, vanity, unmapped, direction-mismatch, unmeasurable} from check-prd-metrics-quality
+       - n_ambiguous    — `kind == "ambiguous"` from check-prd-ambiguity
+    2. Apply the scoring formula:
+       ```
+       score = 1.0
+             - 0.20 * n_missing
+             - 0.15 * n_conflicting
+             - 0.10 * n_untestable
+             - 0.10 * n_metric
+             - 0.05 * n_ambiguous
+       ```
+    3. Floor the score at 0.0.
+    4. Determine verdict:
+       - `pass` if score >= 0.85
+       - `revise` otherwise
+    5. Compose `trace` showing every term in the formula with the count, e.g.:
+       `1.0 - 0.20*2 (missing) - 0.15*0 (conflicting) - 0.10*3 (untestable) - 0.10*1 (metric) - 0.05*4 (ambiguous) = 0.05`
+    6. Emit `{readiness_score, verdict, trace, confidence}`. Confidence is 0.97 when all counts came from machine-readable findings; lower if the findings array contained kinds outside the enums above.
+    
+    ## How to think
+    - The formula is fixed. Do not adjust weights for "perceived severity".
+    - An empty findings array yields a perfect 1.0 — that is correct.
+    - A finding with an unrecognised kind -> include it under the closest match for counting, but lower confidence and note it in trace.
+    - Verdict threshold is 0.85, matching the PRD readiness gate. Never relax it.
+    - This skill is mechanical. If you find yourself reasoning about content, you have over-stepped.
+    
+    ## Required inputs
+    `findings` must be an array (may be empty). Each element must have a `kind` string. If `findings` is missing or not an array, STOP and ask human.
+    
+    ## Output format
+    {
+      "readiness_score": 0.0,
+      "verdict": "pass|revise",
+      "trace": "1.0 - 0.20*<n> - 0.15*<n> - 0.10*<n> - 0.10*<n> - 0.05*<n> = <result>",
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: counts match the input findings exactly; formula applied verbatim; floor at 0.0 honoured; verdict consistent with score threshold; trace is reproducible.
+    Fails if: weights tweaked; counts wrong; verdict inconsistent with score; trace missing terms.
+    
+    ## Common pitfalls
+    - Treating each `check-prd-completeness` finding (missing/empty/skeleton) with a different weight — they all count as `n_missing`.
+    - Forgetting to floor at 0.0 — a heavily defective PRD can produce negative arithmetic.
+    - Reporting a different threshold than 0.85.
+    - Editorialising in `trace` rather than emitting the literal formula.
+    
+    ## Examples
+    Good output:
+    {
+      "readiness_score": 0.55,
+      "verdict": "revise",
+      "trace": "1.0 - 0.20*1 (missing) - 0.15*0 (conflicting) - 0.10*1 (untestable) - 0.10*1 (metric) - 0.05*1 (ambiguous) = 0.55",
+      "confidence": 0.97
+    }
+    
+    Good output (clean PRD):
+    {
+      "readiness_score": 1.0,
+      "verdict": "pass",
+      "trace": "1.0 - 0.20*0 - 0.15*0 - 0.10*0 - 0.10*0 - 0.05*0 = 1.00",
+      "confidence": 0.97
+    }
+    
+    Bad output:
+    {
+      "readiness_score": 0.9,
+      "verdict": "pass",
+      "trace": "felt close to ready"
+    } (formula not applied; trace not reproducible)
     
     ## Stop condition
+    Score computed, floored, verdict determined by 0.85 threshold, trace shows every term with counts and final result, confidence reported.
     
-    Output includes numeric score, verdict, and the formula trace.
+    ## Confidence guidance
+    Lower confidence when:
+    - Any finding has an unrecognised kind -> <= 0.92
+    - Findings array is unusually structured -> <= 0.90
+    - Mixed score sources beyond the five check skills -> <= 0.88
+    Confidence >= 0.95 is required to proceed without human review.
 
 ### Skill: write-executive-summary
 
     
     # Skill: write-executive-summary
     
-    ## Task
+    ## Purpose
+    Draft the Executive Summary section of the PRD: one short paragraph that tells a busy reader what is being built, for whom, and why now. No goals, no metrics, no scope, no solution detail — strictly the elevator pitch.
     
-    Draft exactly one paragraph (≤120 words) summarising what is being built,
-    for whom, and why now. No goals, no metrics, no scope — just the elevator.
+    ## When to invoke
+    Invoke during PRD authoring once stakeholder input exists and personas + problem statement are at least drafted. Order in the PRD is fixed: Executive Summary is section 1.
+    
+    Do NOT invoke to: list goals (use write-goals-and-non-goals), define metrics (use write-success-metrics), or describe users in depth (use write-user-personas).
+    
+    ## Procedure (follow exactly)
+    1. Read `stakeholder_input` end to end.
+    2. Identify three nouns: WHAT (the thing being built), WHO (primary audience), WHY-NOW (the catalyst or urgency).
+    3. If any of the three is missing or speculative, STOP and lower confidence; record the gap as a comment in the section (HTML comment) and do not invent.
+    4. Draft one paragraph in this shape:
+       `<WHAT> is a <one-line descriptor> for <WHO>. It <one-line value>. We are building it now because <WHY-NOW>.`
+    5. Trim to <=120 words. Hard cap.
+    6. Remove any goals, metrics, scope, or implementation references.
+    
+    ## How to think
+    - WHY-NOW absent -> do not invent a market trend; flag and lower confidence.
+    - Audience too broad ("everyone") -> narrow using stakeholder_input or flag.
+    - Tempted to bullet -> resist; this section is exactly one paragraph.
+    - Tempted to mention tech -> remove; that belongs in the TSD.
+    
+    ## Required inputs
+    `stakeholder_input` must be a non-empty string. If missing, STOP and ask human.
+    
+    ## Output format
+    {
+      "section": "## Executive Summary\n\n<paragraph>\n",
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: section starts with `## Executive Summary`; one paragraph; <=120 words; mentions WHAT, WHO, WHY-NOW; no bullets; no metrics; no tech.
+    Fails if: multi-paragraph; bullet list; >120 words; missing any of the three nouns without an explicit gap comment; mentions implementation choices.
+    
+    ## Common pitfalls
+    - Restating the problem statement verbatim.
+    - Sneaking goals in as "the summary".
+    - Vague audience ("users will love it").
+    - Marketing adjectives ("revolutionary", "best-in-class").
+    
+    ## Examples
+    Good:
+    ## Executive Summary
+    
+    QuizLoop is a weekly-quiz delivery tool for K-8 math teachers in 1:1 device classrooms. It lets a teacher schedule a quiz once and see class-average mastery the next morning, replacing the spreadsheet-and-paper workflow most teachers still use. We are building it now because the district's new mastery-based grading policy takes effect next school year.
+    
+    Bad:
+    ## Executive Summary
+    
+    We will build a great app using React and Postgres that has many features including dashboards, notifications, and exports. Users love quizzes. The market is huge. (no WHO specifics, mentions tech, marketing tone, multiple sentences of fluff)
     
     ## Stop condition
+    One paragraph emitted under `## Executive Summary`; word count <=120; WHAT/WHO/WHY-NOW present or gaps explicitly commented; confidence reported.
     
-    Output is a single paragraph; word count ≤120; mentions audience + value
-    + urgency.
+    ## Confidence guidance
+    Lower confidence when:
+    - WHY-NOW is weak or assumed -> <= 0.7
+    - Audience is broader than stakeholder_input supports -> <= 0.7
+    - Stakeholder input is contradictory -> <= 0.65
+    - Word count had to be cut aggressively, losing nuance -> <= 0.8
+    Confidence >= 0.85 is required to proceed without human review.
 
 ### Skill: write-functional-requirements
 
     
     # Skill: write-functional-requirements
     
-    ## Task
+    ## Purpose
+    Enumerate observable system behaviors as numbered Functional Requirements. Each FR uses the canonical SHALL form. FRs are the contract every test author and implementer treats as ground truth.
     
-    Numbered FR-1, FR-2, … each in the form:
+    ## When to invoke
+    Invoke as PRD section 5, after Goals and Personas exist. FRs must trace back to a goal AND a persona's primary job.
     
-    > The system SHALL **\<observable behaviour\>** when **\<trigger\>**.
+    Do NOT invoke to: list quality attributes (use write-non-functional-requirements), define acceptance criteria (those are downstream), or describe UI mocks.
     
-    One behaviour per FR. No "should" — only "shall". No implementation hints.
+    ## Procedure (follow exactly)
+    1. Parse `goals` to a list of outcomes and `personas` to a list of jobs.
+    2. For each (goal, persona-job) pair the release must support, draft one FR:
+       `FR-<N>: The system SHALL <observable behavior> when <trigger>.`
+    3. Rules:
+       a. "SHALL" only; never "should", "may", "could".
+       b. One behavior per FR; no compound `and`/`or` chaining behaviors.
+       c. Trigger must be observable (user action, time event, external signal). "When data is invalid" is fine if invalid is defined elsewhere; "when appropriate" is not.
+       d. No implementation hints (no tech, framework, library, schema).
+       e. Number sequentially `FR-1`, `FR-2`, ...
+    3. After drafting, add a coverage table mapping FR -> goal id (or goal text) and FR -> persona job.
+    4. If a goal has zero FRs or a persona primary job has zero FRs, STOP and either add an FR or record an open question; do not silently skip.
+    
+    ## How to think
+    - Two behaviors look related ("create and edit") -> two FRs.
+    - Behavior is internal ("the system shall index records") -> rewrite to external symptom ("the system SHALL return matching records within the search response").
+    - Trigger absent ("the system SHALL support exports") -> add a trigger ("when the teacher clicks Export").
+    - Persona has no FR coverage -> ask: should the release serve this persona? If not, push them to non-goals.
+    
+    ## Required inputs
+    `goals` and `personas` both non-empty markdown. If either is missing, STOP and route back.
+    
+    ## Output format
+    {
+      "section": "## Functional Requirements\n\n- FR-1: The system SHALL <behavior> when <trigger>.\n- ...\n\n### Coverage\n| FR | Goal | Persona Job |\n|----|------|-------------|\n| FR-1 | <goal> | <job> |\n",
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: every FR uses SHALL + observable behavior + trigger; every goal has >=1 FR; every persona primary job has >=1 FR; coverage table present; no implementation language.
+    Fails if: weak verbs (should/may); compound behaviors; missing triggers; orphan goals or persona jobs without coverage; tech mentioned.
+    
+    ## Common pitfalls
+    - "The system SHALL be user-friendly." (not observable)
+    - "The system SHALL support exporting and importing and sharing." (compound)
+    - "The system SHALL use Postgres for persistence." (tech, not behavior)
+    - "FR-1: Login." (not a sentence, no trigger)
+    
+    ## Examples
+    Good:
+    ## Functional Requirements
+    
+    - FR-1: The system SHALL display the class roster sorted by last name when the teacher opens a class page.
+    - FR-2: The system SHALL schedule a quiz for a future date when the teacher submits the schedule form with a valid date.
+    - FR-3: The system SHALL return a permission-denied error when a teacher requests a class they do not own.
+    
+    ### Coverage
+    | FR | Goal | Persona Job |
+    |----|------|-------------|
+    | FR-2 | Enable one-action scheduling | Assign weekly mastery checks |
+    
+    Bad:
+    - FR-1: The system should be fast and reliable. (weak verb, not observable)
+    - FR-2: The system SHALL do quizzes. (no trigger, no behavior)
     
     ## Stop condition
+    FR list numbered and SHALL-formed; coverage table maps each FR to a goal and persona job; every goal and persona primary job covered (or flagged); confidence reported.
     
-    Every goal maps to at least one FR; every persona's primary job maps to
-    at least one FR.
+    ## Confidence guidance
+    Lower confidence when:
+    - A persona job has no clear FR mapping -> <= 0.7
+    - Triggers had to be inferred -> <= 0.75
+    - Behaviors that ought to be FRs feel more like NFRs (perf, security) -> <= 0.75
+    - Goals are vague (cascaded uncertainty) -> <= 0.7
+    Confidence >= 0.85 is required to proceed without human review.
 
 ### Skill: write-goals-and-non-goals
 
     
     # Skill: write-goals-and-non-goals
     
-    ## Task
+    ## Purpose
+    Emit the Goals and Non-Goals section: two bulleted lists that bound the release. Goals are the outcomes the release MUST achieve. Non-Goals are explicitly out-of-scope outcomes adjacent enough that reviewers might otherwise assume them in.
     
-    Emit two bulleted lists:
+    ## When to invoke
+    Invoke as PRD section 3, after Problem Statement is drafted. Goals must be traceable to the problem's harm.
     
-    - **Goals** — observable outcomes the release MUST achieve.
-    - **Non-Goals** — explicitly out-of-scope outcomes that look adjacent.
+    Do NOT invoke to: list features (goals are outcomes, not features), define metrics (use write-success-metrics), or enumerate non-functional constraints (use write-non-functional-requirements).
     
-    Every goal starts with a verb. Every non-goal explains why it's deferred.
+    ## Procedure (follow exactly)
+    1. Parse `problem_statement` to identify the harm.
+    2. Draft Goals:
+       a. Each goal begins with a verb (Reduce, Enable, Increase, Eliminate).
+       b. Each goal names an observable outcome tied to the harm.
+       c. Avoid technology, UI, or feature names.
+       d. 3–7 goals typical; fewer if scope is narrow.
+    3. Draft Non-Goals:
+       a. Each non-goal is something a reviewer might reasonably assume IS in scope.
+       b. Each non-goal includes a one-line rationale ("deferred to vNext", "covered by feature X", "not legal yet", "explicit founder decision").
+       c. At least one non-goal is required; silence implies "anything goes".
+    4. Cross-check: no item appears in both lists; no non-goal contradicts a goal.
+    
+    ## How to think
+    - Goal looks like a feature ("ship the quiz scheduler") -> rewrite as outcome ("teachers can schedule weekly quizzes in one step").
+    - Non-goal feels obvious ("we won't build an OS") -> drop; only include genuinely adjacent items reviewers might assume.
+    - Goal lacks tie to harm -> drop or move to "nice to have" (which means: drop).
+    - Tempted to qualify a goal with metric numbers -> push numbers to success metrics; keep goals as outcomes.
+    
+    ## Required inputs
+    `problem_statement` markdown non-empty. If absent or empty, STOP and route back to write-problem-statement.
+    
+    ## Output format
+    {
+      "section": "## Goals & Non-Goals\n\n### Goals\n- <verb>...\n\n### Non-Goals\n- <item> — <rationale>\n",
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: both subsections present and non-empty; every goal starts with a verb and is an outcome; every non-goal carries a rationale; no overlap; no contradictions with the problem statement.
+    Fails if: empty non-goals list; goals that are features or tech choices; non-goals without rationale; duplicated items.
+    
+    ## Common pitfalls
+    - Listing the product itself as a goal ("ship QuizLoop").
+    - Vague goals ("improve teacher experience").
+    - Non-goals that are silly or strawmen ("we won't build a spaceship").
+    - Drifting into metrics ("increase DAU by 20%") — those belong in metrics, not goals.
+    
+    ## Examples
+    Good:
+    ## Goals & Non-Goals
+    
+    ### Goals
+    - Reduce teacher weekly grading time from ~4h to <30min.
+    - Enable teachers to schedule a recurring quiz in one action.
+    - Surface per-student mastery without manual spreadsheet work.
+    
+    ### Non-Goals
+    - Building a student-facing analytics dashboard — deferred to vNext.
+    - Supporting non-math subjects — covered by sibling product Math-only scope.
+    - Offering offline mode — district networks meet uptime SLA.
+    
+    Bad:
+    ### Goals
+    - Use React. (tech choice, not outcome)
+    - Make teachers happy. (not observable)
+    
+    ### Non-Goals
+    - We will not solve world hunger. (strawman)
     
     ## Stop condition
+    `### Goals` and `### Non-Goals` both populated under `## Goals & Non-Goals`; every goal observable, every non-goal has rationale; confidence reported.
     
-    Goals list is non-empty; non-goals list is non-empty (silence on non-goals
-    implies "anything goes" and that's wrong).
+    ## Confidence guidance
+    Lower confidence when:
+    - Problem statement harm was qualitative -> <= 0.75
+    - More than 7 candidate goals — likely scope creep -> <= 0.7
+    - Non-goals feel speculative without stakeholder grounding -> <= 0.75
+    - Any goal could be read as a feature rather than outcome -> <= 0.8
+    Confidence >= 0.85 is required to proceed without human review.
 
 ### Skill: write-non-functional-requirements
 
     
     # Skill: write-non-functional-requirements
     
-    ## Task
+    ## Purpose
+    Declare numbered, measurable quality attributes the system must satisfy across six required categories. Each NFR is a single measurable claim — every subjective adjective must carry a number.
     
-    Numbered NFR-1, NFR-2, … covering at minimum:
+    ## When to invoke
+    Invoke as PRD section 6, after Functional Requirements exist (because some NFRs scope to particular FRs).
     
-    - Performance (latency, throughput targets)
-    - Scalability (peak load assumption)
-    - Security & privacy (data classes, retention)
-    - Availability (SLO)
-    - Accessibility (WCAG level)
-    - Compliance (relevant regs)
+    Do NOT invoke to: list functional behaviors (use write-functional-requirements), define metrics for success (use write-success-metrics), or specify implementation (TSD territory).
     
-    Each NFR is a single measurable claim.
+    ## Procedure (follow exactly)
+    1. Parse `functional_requirements`. Identify FRs that imply load, sensitive data, or special access.
+    2. Draft NFRs covering at minimum these six categories. Each category must appear at least once:
+       a. Performance — latency or throughput, p50/p95/p99 as applicable.
+       b. Scalability — peak load assumption (concurrent users, RPS, dataset size).
+       c. Security & privacy — data classification, retention, encryption at rest/in transit, authn/authz.
+       d. Availability — SLO (uptime %, error budget).
+       e. Accessibility — WCAG level (e.g. WCAG 2.2 AA) and assistive tech support.
+       f. Compliance — relevant regs (FERPA, GDPR, HIPAA, SOC2). If none apply, write `NFR-x: No regulated data is processed (rationale: ...)`.
+    3. Number sequentially `NFR-1`, `NFR-2`, ...
+    4. Every NFR must include a number; subjective adjectives without numbers are forbidden.
+    5. If a number is unknown, write `<TBD: source needed>` and lower confidence; do NOT invent.
+    
+    ## How to think
+    - Tempted to write "fast page loads" -> add a number ("p95 < 500ms on a Chromebook over 5 Mbps").
+    - Compliance unclear -> name the regulatory inquiry as an open question; pick the strictest plausible reg as placeholder and lower confidence.
+    - Accessibility "where reasonable" -> name a WCAG level explicitly.
+    - Security: don't list controls (those are TSD); list outcomes ("PII at rest is encrypted with AES-256-GCM").
+    
+    ## Required inputs
+    `functional_requirements` non-empty markdown. If absent, STOP and route back to write-functional-requirements.
+    
+    ## Output format
+    {
+      "section": "## Non-Functional Requirements\n\n- NFR-1 (Performance): ...\n- NFR-2 (Scalability): ...\n- NFR-3 (Security & Privacy): ...\n- NFR-4 (Availability): ...\n- NFR-5 (Accessibility): ...\n- NFR-6 (Compliance): ...\n",
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: all six categories present; every NFR has a measurable number or explicit standard; numbering sequential; tags `(<Category>)` after each NFR id.
+    Fails if: any category missing; subjective adjectives without numbers; multiple categories merged into one NFR; tech choices stated.
+    
+    ## Common pitfalls
+    - "Highly available" with no SLO.
+    - "Reasonable performance" — meaningless.
+    - Bundling security and privacy into "secure".
+    - Listing every NIST control instead of an outcome.
+    
+    ## Examples
+    Good:
+    ## Non-Functional Requirements
+    
+    - NFR-1 (Performance): Class-page render completes within p95 < 500ms over a 5 Mbps Chromebook connection.
+    - NFR-2 (Scalability): The system supports 50,000 concurrent teacher sessions during the 8am-9am peak.
+    - NFR-3 (Security & Privacy): Student PII at rest is encrypted with AES-256-GCM; access requires authenticated teacher with class ownership; retained no longer than 365 days post end-of-school-year.
+    - NFR-4 (Availability): 99.9% monthly uptime SLO; error budget consumed events trigger postmortem.
+    - NFR-5 (Accessibility): Meets WCAG 2.2 AA on all teacher-facing screens; supports JAWS and VoiceOver.
+    - NFR-6 (Compliance): FERPA-compliant data handling; signed DPA with district required before onboarding.
+    
+    Bad:
+    - NFR-1: System should be fast and secure. (no numbers, compound)
+    - NFR-2: We will use TLS 1.3. (tech, not outcome)
     
     ## Stop condition
+    All six categories present under `## Non-Functional Requirements`; every NFR measurable with a number or named standard; confidence reported.
     
-    All six categories appear; no claim uses subjective adjectives ("fast",
-    "secure", "scalable") without a number.
+    ## Confidence guidance
+    Lower confidence when:
+    - Compliance regime is uncertain -> <= 0.7
+    - Performance targets not benchmarked against real users -> <= 0.75
+    - Scalability number was inferred from goals not stated -> <= 0.7
+    - Accessibility commitment lacks stakeholder sign-off -> <= 0.75
+    Confidence >= 0.85 is required to proceed without human review.
 
 ### Skill: write-out-of-scope
 
     
     # Skill: write-out-of-scope
     
-    ## Task
+    ## Purpose
+    Enumerate explicit out-of-scope items reviewers might otherwise assume are in scope. Each item has a one-line rationale. This section reduces post-launch surprise and prevents implicit scope creep during build.
     
-    Enumerate explicit out-of-scope items reviewers might assume are in
-    scope. Each item has a one-line rationale ("deferred to vNext", "covered
-    by feature X", "not legal yet").
+    ## When to invoke
+    Invoke as PRD section 8, after Goals and Non-Goals are drafted. Use those as the springboard for adjacent items.
+    
+    Do NOT invoke to: replace Non-Goals (Non-Goals are adjacent outcomes; Out of Scope is adjacent features/capabilities/integrations), or to list future roadmap (use a separate roadmap doc).
+    
+    ## Procedure (follow exactly)
+    1. Parse `goals` and `non_goals`. Build a mental list of capabilities reviewers might infer.
+    2. For each plausible inferred capability NOT covered by goals or non-goals, add an entry:
+       `- <item>: <rationale>`
+       where rationale is one of: "deferred to vNext", "covered by feature/product X", "not legal yet", "explicit founder decision", "blocked on dependency Y".
+    3. Provide at least 3 items. Fewer signals you haven't probed adjacencies enough.
+    4. Cross-check: no item duplicates a non-goal verbatim; no item contradicts a goal.
+    5. Order items roughly by likelihood of confusion (most-assumed first).
+    
+    ## How to think
+    - An item is plausible only if a reviewer might assume it -> if no reviewer would assume it (e.g. "we won't build a CRM"), drop.
+    - Tempted to overlap with Non-Goals -> Non-Goals are outcomes; Out of Scope is features, integrations, platforms, audiences. Keep the distinction.
+    - Rationale is "we don't want to" -> not enough; name the reason (timing, legality, dependency, strategy).
+    - An item could plausibly be in scope but is unconfirmed -> mark as open question instead, don't park silently.
+    
+    ## Required inputs
+    Both `goals` and `non_goals` non-empty markdown. If either is missing, STOP and route back upstream.
+    
+    ## Output format
+    {
+      "section": "## Out of Scope\n\n- <item>: <rationale>\n- <item>: <rationale>\n- <item>: <rationale>\n",
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: >=3 items; each has a concrete rationale from the allowed shape; no duplicates of non-goals; no contradictions with goals; ordered by likelihood of reviewer confusion.
+    Fails if: <3 items; rationale missing or vague ("we don't want to"); duplicates non-goals verbatim; strawman items.
+    
+    ## Common pitfalls
+    - Listing internal todos ("we will refactor later") — that's engineering work, not scope.
+    - Listing things outside the product domain ("we will not build a spaceship").
+    - Pasting non-goals here.
+    - Omitting integrations users commonly assume (SSO, Google Classroom export, mobile app).
+    
+    ## Examples
+    Good:
+    ## Out of Scope
+    
+    - Native mobile app (iOS/Android): deferred to vNext; web responsive only for v1.
+    - Google Classroom roster sync: blocked on partner API access agreement.
+    - Parent-facing portal: explicit founder decision; teachers are the only audience.
+    - Bulk CSV import of historical quiz results: deferred to vNext; manual entry suffices for pilot.
+    
+    Bad:
+    ## Out of Scope
+    
+    - We won't build a CRM. (strawman)
+    - Mobile. (no rationale)
+    - Same as non-goal: student dashboard. (duplicate)
     
     ## Stop condition
+    At least three items under `## Out of Scope`; each with a concrete rationale; no duplicates of non-goals; confidence reported.
     
-    At least three items; no item duplicates non-goals.
+    ## Confidence guidance
+    Lower confidence when:
+    - Rationale relies on assumed roadmap not confirmed by stakeholders -> <= 0.75
+    - Adjacencies are guesses about reviewer assumptions -> <= 0.75
+    - Many candidates exist but unclear which 3 are most material -> <= 0.7
+    - Distinction between non-goal and out-of-scope is fuzzy for some items -> <= 0.8
+    Confidence >= 0.85 is required to proceed without human review.
 
 ### Skill: write-problem-statement
 
     
     # Skill: write-problem-statement
     
-    ## Task
+    ## Purpose
+    State the problem in exactly one sentence using a fixed four-slot template, with zero solution language. This anchors every downstream goal, FR, and metric to a concrete pain.
     
-    State the problem in the form:
+    ## When to invoke
+    Invoke as PRD section 2, after stakeholder input is gathered and ideally before goals are drafted (goals reference the harm).
     
-    > Today, **\<users\>** struggle to **\<job\>** because **\<root cause\>**.
-    > This results in **\<measurable harm\>**.
+    Do NOT invoke to: enumerate goals (use write-goals-and-non-goals), describe users (use write-user-personas), or propose a solution (no skill should; solutions belong in TSD/design).
     
-    One sentence. No solution language.
+    ## Procedure (follow exactly)
+    1. Read `stakeholder_input`.
+    2. Extract four slots:
+       a. `<users>` — concrete role label (not "users").
+       b. `<job>` — the user's job-to-be-done.
+       c. `<root cause>` — why today's environment blocks that job.
+       d. `<measurable harm>` — quantifiable consequence (time lost, errors, churn, revenue).
+    3. Compose exactly one sentence in this form:
+       `Today, <users> struggle to <job> because <root cause>. This results in <measurable harm>.`
+    4. Strip any solution wording ("we will build", "the app", feature names).
+    5. If any slot is empty in stakeholder_input, STOP and lower confidence; record an HTML comment naming the empty slot. Do NOT invent numbers.
+    
+    ## How to think
+    - Tempted to write "users want X" -> reframe as "users struggle to do Y because Z".
+    - Harm is qualitative -> push for a number; if none exists, flag and keep qualitative with a note.
+    - Root cause looks like a missing feature -> step back; the root cause is the real-world condition, not the absence of your product.
+    - Multiple user roles in pain -> pick the primary one; secondaries belong in personas, not here.
+    
+    ## Required inputs
+    `stakeholder_input` non-empty. If missing, STOP and ask human. If it only describes a solution with no pain, STOP and route back to discovery.
+    
+    ## Output format
+    {
+      "section": "## Problem Statement\n\nToday, <users> struggle to <job> because <root cause>. This results in <measurable harm>.\n",
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: header is `## Problem Statement`; exactly one sentence with both clauses; all four slots filled with concrete content (or explicitly commented as gaps); no solution language.
+    Fails if: more than one sentence (other than the harm clause); slot uses generic "users"; mentions a product, feature, or technology; harm slot is purely subjective without a flag.
+    
+    ## Common pitfalls
+    - "Users don't have a way to X" — that's a missing feature, not a problem.
+    - Listing multiple problems separated by commas.
+    - Hiding the root cause inside the harm slot.
+    - Using marketing tone ("frustrating user experience").
+    
+    ## Examples
+    Good:
+    ## Problem Statement
+    
+    Today, K-8 math teachers struggle to give weekly mastery checks because the only tools available are paper quizzes or generic LMS forms that don't compute mastery. This results in roughly 4 hours per teacher per week spent on manual grading and spreadsheet reconciliation.
+    
+    Bad:
+    ## Problem Statement
+    
+    Users want a better quiz app with more features. (no slots filled, solution-flavored, no harm)
     
     ## Stop condition
+    Single sentence (plus harm clause) under `## Problem Statement`; four slots concretely filled or gap-commented; no solution language; confidence reported.
     
-    Output contains all four `<...>` slots filled with concrete content.
+    ## Confidence guidance
+    Lower confidence when:
+    - Harm has no number in stakeholder_input -> <= 0.75
+    - Root cause is inferred rather than stated -> <= 0.7
+    - Multiple plausible primary user roles -> <= 0.7
+    - Stakeholder input mixes solution and problem -> <= 0.7
+    Confidence >= 0.85 is required to proceed without human review.
 
 ### Skill: write-success-metrics
 
     
     # Skill: write-success-metrics
     
-    ## Task
+    ## Purpose
+    For each goal, declare 1–2 quantitative metrics with baseline, target, measurement window, and instrumentation source. Metrics turn outcomes into a contract you can verify post-launch.
     
-    For each goal, name 1–2 metrics with: current baseline, target value,
-    measurement window, instrumentation source. No vanity metrics.
+    ## When to invoke
+    Invoke as PRD section 7, after Goals are drafted. Every metric must trace to exactly one goal.
     
-    ## Format
+    Do NOT invoke to: write goals (use write-goals-and-non-goals), define NFR perf targets (those are SLOs in NFRs), or list out-of-scope items.
     
-    ```
-    - Goal: <goal>
-      - Metric: <name>
-      - Baseline: <value (date)>
-      - Target: <value (window)>
-      - Source: <event / dashboard / query>
-    ```
+    ## Procedure (follow exactly)
+    1. Parse `goals` to a list.
+    2. For each goal, propose 1–2 metrics. Prefer rates and ratios over totals; vanity totals are forbidden.
+    3. For each metric, populate four fields:
+       a. Baseline — current value with the date it was measured.
+       b. Target — desired value with the window it must hold over.
+       c. Window — measurement period (e.g. "rolling 30 days").
+       d. Source — exact instrumentation source (event name, dashboard URL, SQL query name). Never "TBD".
+    4. If a baseline is unknown, write `Baseline: unknown (instrument first)` and lower confidence; do NOT invent numbers.
+    5. Format each metric under its parent goal using the canonical template.
+    
+    ## How to think
+    - Tempted to use a total ("signups") -> convert to a rate ("weekly active teachers / total teachers").
+    - Target with no window -> the metric is unfalsifiable; add a window.
+    - Source is generic ("analytics") -> name the event or query; "analytics" is not a source.
+    - Goal lacks an obvious metric -> push back; flag as open question rather than invent.
+    - One metric covers multiple goals -> attribute it to the primary goal; do not duplicate.
+    
+    ## Required inputs
+    `goals` non-empty markdown. If missing, STOP and route to write-goals-and-non-goals.
+    
+    ## Output format
+    {
+      "section": "## Success Metrics\n\n- Goal: <goal>\n  - Metric: <name>\n  - Baseline: <value (date)>\n  - Target: <value>\n  - Window: <period>\n  - Source: <event / dashboard / query>\n",
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: every goal has >=1 metric; every metric has all four populated fields; no vanity totals; targets are numeric; sources are specific instruments.
+    Fails if: a goal has zero metrics; any field reads "TBD"; targets are qualitative; metric is a total without a denominator; baseline is fabricated.
+    
+    ## Common pitfalls
+    - "Increase engagement" with no definition.
+    - Targets without windows ("reach 1000 users") — by when, over what period?
+    - Baselines invented to look reasonable.
+    - Using DAU/MAU as a metric for a B2B teacher tool with weekly cadence.
+    
+    ## Examples
+    Good:
+    ## Success Metrics
+    
+    - Goal: Reduce teacher weekly grading time from ~4h to <30min.
+      - Metric: Median self-reported weekly grading minutes per active teacher.
+      - Baseline: 240 min (2026-04 survey, n=58).
+      - Target: <=30 min.
+      - Window: rolling 4 weeks.
+      - Source: in-app weekly survey `teacher_time_survey_v1`.
+    
+    Bad:
+    - Goal: Make teachers happy.
+      - Metric: Happiness. (undefined)
+      - Baseline: TBD. (invented gap)
+      - Target: High. (qualitative)
+      - Source: analytics. (generic)
     
     ## Stop condition
+    Every goal has at least one metric with all four fields concrete or explicitly flagged; section header is `## Success Metrics`; confidence reported.
     
-    Every goal has at least one metric; every metric has all four fields
-    populated.
+    ## Confidence guidance
+    Lower confidence when:
+    - Any baseline is unknown / uninstrumented -> <= 0.7
+    - Source is a yet-to-be-built event -> <= 0.75
+    - Goal-to-metric link is indirect -> <= 0.7
+    - Target chosen without stakeholder sign-off -> <= 0.75
+    Confidence >= 0.85 is required to proceed without human review.
 
 ### Skill: write-user-personas
 
     
     # Skill: write-user-personas
     
-    ## Task
+    ## Purpose
+    Describe each distinct user type the product serves. Persona blocks give downstream FR/NFR authors concrete constraints (device, expertise, context) so they don't invent generic "users".
     
-    For each distinct user type, emit:
+    ## When to invoke
+    Invoke as PRD section 4, after Problem Statement and before Functional Requirements. Personas inform FRs and NFRs (e.g. accessibility, device class).
     
-    - Name (role label, not a person)
-    - Primary jobs-to-be-done (1–3 bullets)
-    - Constraints (device, context, expertise)
-    - One illustrative scenario
+    Do NOT invoke to: enumerate user stories (use gather-user-stories), define metrics (use write-success-metrics), or describe internal stakeholders (sponsors, ops) — they are not personas.
+    
+    ## Procedure (follow exactly)
+    1. Read `stakeholder_input`. Group user references by role.
+    2. For each distinct role, draft a block with four fields:
+       a. Name — role label only (e.g. "K-8 math teacher"), never an invented person's name.
+       b. Primary jobs-to-be-done — 1–3 bullets, each starting with a verb.
+       c. Constraints — device, network, expertise, regulatory, time pressure. Be specific.
+       d. Scenario — one short illustrative paragraph (2–4 sentences) showing the persona using the product in context.
+    3. Order personas by primacy (the one whose problem the release most directly solves first).
+    4. If a field has no support in stakeholder_input, mark it `unknown` and lower confidence; do NOT invent demographics.
+    
+    ## How to think
+    - Tempted to name the persona "Sarah, 34" -> stop; role labels only.
+    - Constraints feel generic ("uses a computer") -> push for specifics ("Chromebook in 1:1 classroom, district-managed, no admin rights").
+    - Multiple roles blended into one persona -> split them.
+    - A role appears in stakeholder_input but isn't served by the release -> mention briefly only if needed for non-goals; do not create a full persona.
+    
+    ## Required inputs
+    `stakeholder_input` non-empty. If missing or no user references appear, STOP and ask human.
+    
+    ## Output format
+    {
+      "section": "## User Personas\n\n### <Role label>\n- Jobs-to-be-done:\n  - <verb> ...\n- Constraints: <device, context, expertise>\n- Scenario: <2-4 sentence vignette>\n",
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: >=1 persona; every persona has all four fields; constraints are specific; scenario is concrete; no invented demographics.
+    Fails if: persona named after a person; field marked "various" or "any"; scenarios drift into solution design; internal stakeholders included.
+    
+    ## Common pitfalls
+    - "Sarah is 34 and loves coffee" — demographic flavor not supported by input.
+    - Constraints listing every adjective ("busy, motivated, tech-savvy") without specifics.
+    - Scenario describing the product's features rather than the persona's day.
+    - Listing five personas to look thorough.
+    
+    ## Examples
+    Good:
+    ## User Personas
+    
+    ### K-8 math teacher
+    - Jobs-to-be-done:
+      - Assign weekly mastery checks aligned to state standards.
+      - Identify students who need reteaching before the next unit.
+    - Constraints: District-managed Chromebook, intermittent classroom Wi-Fi, no install rights, ~10 min between classes.
+    - Scenario: During a 10-minute prep period, the teacher opens the tool, picks the standard for the week, schedules the quiz to push Monday morning, and closes the laptop. Tuesday morning she sees which students missed which sub-skill.
+    
+    Bad:
+    ### Teacher Sarah
+    - Jobs: uses our app. (no verbs, no JTBD)
+    - Constraints: busy. (generic)
+    - Scenario: Sarah loves QuizLoop. (marketing, not a day-in-the-life)
     
     ## Stop condition
+    At least one persona block under `## User Personas`; all four fields filled or explicitly `unknown`; confidence reported.
     
-    At least one persona; every persona has all four fields.
+    ## Confidence guidance
+    Lower confidence when:
+    - Constraints are inferred not stated -> <= 0.75
+    - Only one user reference exists but you suspect multiple roles -> <= 0.7
+    - Scenario relies on assumptions about workflow -> <= 0.75
+    - Stakeholder input contradicts itself on user type -> <= 0.7
+    Confidence >= 0.85 is required to proceed without human review.
 
 ### Skill: extract-acceptance-criteria
 
     
     # Skill: extract-acceptance-criteria
     
-    ## Task
+    ## Purpose
+    For each user story, author 1..N Given/When/Then acceptance criteria that pin down observable behavior. Every story must have at least one happy-path AC and at least one edge-case AC. ACs are the contract downstream test authors use; sloppy ACs cause hallucinated tests.
     
-    For each user story, write 1..N Given/When/Then acceptance criteria.
+    ## When to invoke
+    Invoke after `gather-user-stories` has produced a clean story list AND before `validate-requirements`. Invoke once per requirements pass.
+    
+    Do NOT invoke to: rewrite stories (use gather-user-stories), enumerate NFRs (use write-non-functional-requirements), or design tests (that is the test-author skill).
+    
+    ## Procedure (follow exactly)
+    1. Read every story. If `user_stories` is empty, STOP and ask human.
+    2. For each story, list candidate behaviors:
+       a. The happy path (success).
+       b. At least one edge case: empty input, unauthenticated user, missing prerequisite, boundary value, conflict, or permission denial. Choose whichever applies; if none applies, record an open question.
+    3. For each behavior, write one AC as: `Given <precondition>, When <action>, Then <observable result>`.
+       a. `Given` describes state — never actions.
+       b. `When` describes exactly one action by the role from the story.
+       c. `Then` describes an observable outcome (UI text, status code, record state visible to the role).
+    4. Assign ids `AC-<story_id>-<n>` (e.g. `AC-US-1-1`).
+    5. Reject any AC whose `Then` clause is not observable from outside the system.
+    
+    ## How to think
+    - Cannot identify any edge case → do NOT invent one; record an open question and lower confidence.
+    - AC needs two actions → split into two ACs; chained `When ... and ...` is forbidden.
+    - Outcome is internal ("the cache is warmed") → rewrite to the external symptom or drop.
+    - Multiple roles in one AC → that signals a missing story; flag, don't merge.
+    - Ambiguous precondition ("user is logged in") → make it specific ("user is authenticated with role=teacher").
+    
+    ## Required inputs
+    `user_stories` must be a non-empty list of well-formed stories. If any story is missing role/capability/value, STOP and route back to gather-user-stories.
+    
+    ## Output format
+    {
+      "acceptance_criteria": [
+        {"story_id": "US-1", "ac_id": "AC-US-1-1", "given": "string", "when": "string", "then": "string", "kind": "happy|edge"}
+      ],
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: every story has >=1 happy AC and >=1 edge AC; every `Then` is observable; no compound `When`; ids are sequential per story.
+    Fails if: any story has zero ACs; `Then` references internal state with no external symptom; `When` chains actions; invented preconditions not implied by the story.
+    
+    ## Common pitfalls
+    - Edge case copy-pasted across stories without reflecting story specifics.
+    - Using "should" instead of an observable outcome.
+    - Treating absence of a thing as the test (test the symptom of absence instead).
+    - Bundling validation rules into one AC instead of one per rule.
+    
+    ## Examples
+    Story: As a teacher, I want to assign a weekly quiz, so that students practice on a schedule.
+    
+    Good:
+    - AC-US-1-1 (happy): Given the teacher is signed in and owns class C, When they assign quiz Q to class C with due date D, Then quiz Q appears in every student's queue with due date D.
+    - AC-US-1-2 (edge): Given the teacher is signed in but does not own class C, When they attempt to assign quiz Q to class C, Then the system returns a permission-denied error and no student queue changes.
+    
+    Bad:
+    - Given a teacher, When they assign a quiz, Then it works. (vague Then)
+    - Given a teacher, When they assign a quiz and grade it, Then both succeed. (compound When)
     
     ## Stop condition
+    Every story has >=1 happy AC and >=1 edge AC; every AC has observable Then; ids assigned; confidence reported.
     
-    Every story has at least one G/W/T entry covering the happy path AND at
-    least one edge case (empty input, auth failure, etc.).
+    ## Confidence guidance
+    Lower confidence when:
+    - A story has no obvious edge case in domain -> <= 0.7
+    - Observable outcome unclear from story alone -> <= 0.75
+    - Story value clause was empty (cascaded uncertainty) -> <= 0.7
+    - More than one plausible interpretation of capability -> <= 0.7
+    Confidence >= 0.85 is required to proceed without human review.
 
 ### Skill: gather-user-stories
 
     
     # Skill: gather-user-stories
     
-    ## Task
+    ## Purpose
+    Convert a free-form goal into a clean, deduplicated list of user stories in the canonical "As a <role>, I want <capability>, so that <value>" form. One story per distinct user-facing capability. This is the seed input for every downstream PRD and TSD step.
     
-    Extract user stories from a free-form goal in the canonical
-    "As a / I want / So that" shape.
+    ## When to invoke
+    Invoke when the orchestrator's plan step says gather requirements AND the user has supplied a goal string (any length). Invoke before any PRD section is drafted.
     
-    ## Procedure
+    Do NOT invoke to: write acceptance criteria (use extract-acceptance-criteria), validate completeness (use validate-requirements), or draft persona sections (use write-user-personas).
     
-    1. Read the goal verbatim.
-    2. Identify each distinct user-facing capability.
-    3. Emit one story per capability — no compounds.
-    4. List ambiguities in `open_questions`. Lower confidence accordingly.
+    ## Procedure (follow exactly)
+    1. Read the goal verbatim. Do not paraphrase before extraction.
+    2. Read every `context_files` path. If a path is missing or unreadable, STOP and lower confidence; do not guess content.
+    3. Enumerate distinct user-facing capabilities. A capability is one observable thing one role can do.
+    4. For each capability, write exactly one story: `As a <role>, I want <capability>, so that <value>`.
+       a. `<role>` must be a role from the goal or context — never invent personas.
+       b. `<capability>` must be observable behavior, not an internal mechanism.
+       c. `<value>` must come from the goal or context — if absent, add an entry to `open_questions` and lower confidence.
+    5. Deduplicate. If two stories share role + capability, merge.
+    6. Order stories by the order capabilities appear in the source text.
+    7. List every ambiguity (missing role, missing value, unclear scope) in `open_questions`.
+    
+    ## How to think
+    - Compound story ("I want X and Y") → split into two stories, never one.
+    - Tech-flavored capability ("uses Postgres", "via REST") → strip the tech and keep only the user-facing behavior.
+    - Role implied but never named → use the most specific honest label ("authenticated user", not "user"); flag in `open_questions`.
+    - Value clause missing in source → do NOT invent a benefit; record as open question.
+    - Goal mentions a system component, not a user need → do NOT emit a story; record as open question.
+    
+    ## Required inputs
+    `goal` must be non-empty. `context_files` may be empty but must be a list. If `goal` is empty or only whitespace, STOP and ask human.
+    
+    ## Output format
+    {
+      "user_stories": [
+        {"id": "US-1", "role": "string", "capability": "string", "value": "string"}
+      ],
+      "open_questions": ["string"],
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: every capability in the goal maps to at least one story; no story compounds two capabilities; every story has all three slots filled OR an open question covers the missing slot; story ids are sequential `US-N`.
+    Fails if: stories invented from outside the goal; tech mentioned in capability; compound stories; duplicate role+capability pairs; empty value slot with no matching open question.
+    
+    ## Common pitfalls
+    - Inventing roles the goal never mentions (e.g. adding "admin" when only "user" appears).
+    - Merging two capabilities into one story to keep the list short.
+    - Treating non-functional aspirations ("fast", "secure") as stories — they belong in NFRs.
+    - Restating the goal as one mega-story.
+    
+    ## Examples
+    Goal: "Let teachers assign weekly quizzes and see class averages."
+    
+    Good:
+    - US-1: As a teacher, I want to assign a weekly quiz to my class, so that students practice on a schedule.
+    - US-2: As a teacher, I want to view class average scores per quiz, so that I can identify topics to reteach.
+    
+    Bad:
+    - As a user, I want to use the quiz system. (no capability, generic role)
+    - As a teacher, I want to assign quizzes and see averages. (compound)
+    - As a teacher, I want a Postgres-backed quiz table. (tech in capability)
     
     ## Stop condition
+    Every distinct capability in the goal maps to exactly one story; no story compounds capabilities; every missing slot is matched by an open question; confidence is reported.
     
-    You are done when every capability in the goal maps to at least one story
-    and no story compounds two capabilities.
-    
-    ## Do NOT
-    
-    - Invent stories the goal doesn't imply.
-    - Speculate about tech.
-    - Compress multiple capabilities into one story.
+    ## Confidence guidance
+    Lower confidence when:
+    - Goal lacks a clear value clause for any capability -> <= 0.75
+    - Roles are ambiguous or inferred -> <= 0.7
+    - Context files referenced but unreadable -> <= 0.6
+    - More than one viable split of a compound goal -> <= 0.7
+    Confidence >= 0.85 is required to proceed without human review.
 
 ### Skill: validate-requirements
 
     
     # Skill: validate-requirements
     
-    ## Task
+    ## Purpose
+    Audit the (stories, ACs) bundle for completeness, testability, and internal non-contradiction. Emit a structured report; never rewrite the inputs. This gate prevents bad requirements from poisoning the PRD.
     
-    Check the requirements doc for: completeness (every story has criteria),
-    testability (every criterion is observable), and non-contradiction.
+    ## When to invoke
+    Invoke after `extract-acceptance-criteria` and before any PRD section is drafted. Re-invoke after the requirements author addresses issues.
     
-    ## Output
+    Do NOT invoke to: fix issues (you only report), score readiness (use score-prd-readiness for PRDs), or check PRD-level concerns (use the check-prd-* skills).
     
-    ```json
-    { "issues": [{"story_id": "...", "kind": "...", "msg": "..."}],
-      "verdict": "pass|revise" }
-    ```
+    ## Procedure (follow exactly)
+    1. Completeness pass:
+       a. For each story, confirm at least one happy AC and at least one edge AC exist. Missing -> issue kind `missing-ac`.
+       b. For each story, confirm role, capability, value slots are non-empty. Missing -> issue kind `incomplete-story`.
+    2. Testability pass:
+       a. For each AC, check `Then` is observable (UI symptom, status code, persisted record visible to the role). Internal-only -> kind `untestable`.
+       b. Check `When` is a single action. Compound -> kind `compound-when`.
+       c. Check `Given` describes state not actions. Action in Given -> kind `bad-given`.
+    3. Non-contradiction pass:
+       a. Compare ACs across stories. If two ACs assert opposite outcomes for the same preconditions+action, kind `conflicting`.
+       b. If a story's value clause contradicts another story's value -> kind `value-conflict`.
+    4. For each issue, propose a concrete `fix` (1 sentence).
+    5. Verdict = `pass` iff zero issues. Otherwise `revise`.
+    
+    ## How to think
+    - Unsure whether an outcome is observable -> assume not observable and flag; let the author defend it.
+    - Two ACs that look similar but differ in wording -> only flag conflict if outcomes truly oppose. Subtle wording differences are not conflicts.
+    - A story with no edge AC where domain offers no obvious edge -> still flag `missing-ac`; the author should record the open question instead.
+    - Do NOT invent stories or ACs. Do NOT rewrite. Only report.
+    
+    ## Required inputs
+    Both `user_stories` and `acceptance_criteria` must be non-empty lists. If either is missing, STOP and route back upstream.
+    
+    ## Output format
+    {
+      "validation_report": {
+        "issues": [
+          {"story_id": "US-1", "ac_id": "AC-US-1-2", "kind": "missing-ac|incomplete-story|untestable|compound-when|bad-given|conflicting|value-conflict", "msg": "string", "fix": "string"}
+        ],
+        "verdict": "pass|revise"
+      },
+      "confidence": 0.0
+    }
+    
+    ## Quality criteria
+    Passes if: every story examined; every AC examined; issue kinds drawn only from the allowed enum; every issue has both `msg` and `fix`; verdict matches issue count.
+    Fails if: report omits stories; rewrites instead of reports; issue kinds invented; verdict says `pass` while issues are non-empty.
+    
+    ## Common pitfalls
+    - Treating stylistic differences as conflicts.
+    - Marking an AC `untestable` only because it lacks a status code (UI symptoms count).
+    - Forgetting to check value-clause conflicts across stories.
+    - Producing prose findings instead of structured issues.
+    
+    ## Examples
+    Good issue:
+    {"story_id": "US-2", "ac_id": "AC-US-2-1", "kind": "untestable", "msg": "Then 'the system feels responsive' is subjective", "fix": "Replace with 'page renders within 200ms p95'"}
+    
+    Bad issue (rewrites instead of reports):
+    {"story_id": "US-2", "ac_id": "AC-US-2-1", "kind": "fixed", "msg": "I rewrote it for you", "fix": "..."}
+    
+    ## Stop condition
+    Every story and AC examined; issues structured per schema; verdict consistent with issues; confidence reported.
+    
+    ## Confidence guidance
+    Lower confidence when:
+    - Domain is unfamiliar and observability calls are judgment-heavy -> <= 0.75
+    - Many ACs use borderline-subjective language -> <= 0.7
+    - Stories were already flagged incomplete upstream -> <= 0.7
+    - Conflicts depend on assumed preconditions not stated -> <= 0.65
+    Confidence >= 0.85 is required to proceed without human review.
 
 ### Skill: code-review
 
     
     # Skill: code-review
     
-    ## Task
+    ## Purpose
+    Independently review a patch against acceptance criteria, the TSD contract,
+    and existing code conventions. Report findings; never rewrite the code.
     
-    Review the patch for correctness against acceptance criteria, simplicity,
-    and consistency with existing code. Do NOT rewrite — report findings only.
+    ## When to invoke
+    Plan step is `review` AND a patch exists AND acceptance_criteria is non-empty.
+    Do NOT invoke for: greenfield design, dependency upgrades only, formatting-only
+    patches (route to `lint-check`), security or secret concerns (route to
+    `security-scan` / `secret-scan`).
     
-    ## Output
+    ## Procedure (follow exactly)
+    1. Read the patch end-to-end. Note every new/changed symbol and file.
+    2. For each acceptance criterion, locate the line(s) that satisfy it. Missing
+       coverage → finding with severity `major` and verdict `changes-requested`.
+    3. Check correctness: off-by-one, nil/None handling, error paths, concurrency
+       hazards, resource leaks.
+    4. Check simplicity: dead branches, duplicated logic, unused params, premature
+       abstraction.
+    5. Check consistency: naming, layering, import order, error model. Compare to
+       adjacent files — do NOT invent a convention.
+    6. Assign verdict: any critical → `block`; any major → `changes-requested`;
+       only minor/nit → `pass`.
     
-    `{findings: [{severity, path, line, msg}], verdict: pass|changes-requested|block}`
+    ## How to think
+    - Acceptance criterion ambiguous → record as finding, do not guess.
+    - Style nit but functionally correct → severity `nit`, never `block`.
+    - Suspect bug you cannot prove → severity `major`, msg starts "suspected:".
+    - Patch touches a sensitive surface (auth, payments, migrations) → severity
+      floor `major`.
+    
+    ## Required inputs
+    `patch` and `acceptance_criteria` both non-empty. If `acceptance_criteria` is
+    empty or vague, STOP and lower confidence to ≤0.6.
+    
+    ## Output format
+    ```json
+    {
+      "findings": [
+        {"severity": "major", "path": "api/users.py", "line": 42,
+         "msg": "missing handling for duplicate email per AC#3"}
+      ],
+      "verdict": "changes-requested",
+      "rationale": "AC#3 uncovered; otherwise solid.",
+      "confidence": 0.88
+    }
+    ```
+    
+    ## Quality criteria
+    Pass: every AC mapped to a line or a finding; severity matches impact; no
+    rewrites in `msg` field; verdict consistent with severity distribution.
+    Fail: vague findings ("looks weird"), code rewritten in message, verdict
+    disagrees with findings, missing AC mappings.
+    
+    ## Common pitfalls
+    - Treating style preference as `major`.
+    - Reviewing intent ("you should have used X") instead of the patch.
+    - Skipping deleted-code review — deletions can break callers.
+    - Marking `pass` without enumerating AC coverage.
+    
+    ## Examples
+    ✅ `{"severity":"major","path":"svc/order.go","line":88,"msg":"AC#2 requires
+    idempotency key; handler ignores duplicate POST"}`
+    ❌ `{"severity":"major","msg":"refactor this function to use a map"}` (rewrite,
+    not finding).
+    
+    ## Stop condition
+    Every acceptance criterion mapped; findings emitted with stable severity;
+    verdict set; no file in the patch left unread.
+    
+    ## Confidence guidance
+    AC vague ≤0.7; unfamiliar stack ≤0.75; small patch, clear AC, all mapped
+    ≥0.9. Floor 0.85 required to emit a non-block verdict; below floor, escalate.
 
 ### Skill: dependency-audit
 
     
     # Skill: dependency-audit
     
-    ## Task
+    ## Purpose
+    Run the stack's native CVE scanner against project manifests, emit a
+    normalised vulnerability list, and decide a verdict gated by severity.
     
-    Run the stack's native vulnerability scanner (`npm audit`, `pip-audit`,
-    `cargo audit`, `govulncheck`, `bundler-audit`, etc.) and emit CVE list.
+    ## When to invoke
+    Plan step is `dependency-audit` OR a dependency manifest changed OR before
+    any `deploy-environment` to production. Run periodically per project policy.
+    
+    ## Procedure (follow exactly)
+    1. Detect ecosystem by manifest filename:
+       - `package.json` / `package-lock.json` → `npm audit --json` (or `pnpm
+         audit --json`, `yarn npm audit --json`).
+       - `requirements.txt` / `pyproject.toml` / `poetry.lock` → `pip-audit -f
+         json` or `poetry export | pip-audit -r -`.
+       - `Cargo.toml` / `Cargo.lock` → `cargo audit --json`.
+       - `go.mod` → `govulncheck -json ./...`.
+       - `Gemfile.lock` → `bundler-audit check --update`.
+       - `pom.xml` → `mvn org.owasp:dependency-check-maven:check`.
+    2. Run scoped to `manifest_path` directory; never run global scans.
+    3. Parse JSON output. Normalise each advisory to {id, severity, package,
+       version, fix, advisory_url}.
+    4. Filter below `severity_floor` (default `high`).
+    5. Verdict: any `critical` → `block`. Any `high` with no `fix` available →
+       `changes-requested`. Otherwise `pass`.
+    
+    ## How to think
+    - "fix available" means a patched version exists in the ecosystem registry,
+      not just any newer version. Verify before recommending.
+    - Transitive vs direct: include both; mark `path` field as the dep chain.
+    - Yanked packages → severity `high` minimum.
+    - Dev-only dependencies → reduce severity one notch unless RCE.
+    
+    ## Required inputs
+    `manifest_path` exists and is readable. If `lockfile_path` is implied by
+    ecosystem and missing, STOP and ask — unlocked audits are unreliable.
+    
+    ## Output format
+    ```json
+    {
+      "findings": [
+        {"id":"GHSA-7fhm-mqm4-2wp7","severity":"high","path":"axios>follow-redirects",
+         "package":"follow-redirects","version":"1.15.3","fix":"1.15.4",
+         "advisory_url":"https://github.com/advisories/GHSA-7fhm-mqm4-2wp7"}
+      ],
+      "verdict": "changes-requested",
+      "tool_used": "npm",
+      "confidence": 0.96
+    }
+    ```
+    
+    ## Quality criteria
+    Pass: every finding has id+severity+package+version; tool_used recorded;
+    verdict matches severity distribution; transitive paths included.
+    Fail: missing advisory ids, fabricated CVE numbers, ignoring "no fix"
+    cases, scanning wrong directory.
+    
+    ## Common pitfalls
+    - Running `npm audit fix` automatically — out of scope for this skill.
+    - Reporting deprecation warnings as vulnerabilities.
+    - Failing silently when network is unavailable — must STOP and signal.
+    - Mixing dev and prod severities without marking which is which.
+    
+    ## Examples
+    ✅ `pip-audit` reports `PYSEC-2024-48` in `requests<2.32.0`, fix `2.32.0`,
+    severity `high`, verdict `changes-requested`.
+    ❌ Reporting `npm audit` warning about `low` severity prototype pollution
+    when severity_floor is `high` (should be filtered out).
+    
+    ## Stop condition
+    Tool exited successfully (or errored explicitly recorded); every finding
+    normalised; verdict set per severity policy.
+    
+    ## Confidence guidance
+    Native tool ran fresh against locked manifest ≥0.97; stale lockfile or no
+    lockfile ≤0.8 (escalate); partial output ≤0.6. Floor 0.95 — below it,
+    default to `changes-requested` and escalate.
 
 ### Skill: lint-check
 
     
     # Skill: lint-check
     
-    ## Task
+    ## Purpose
+    Run the repository's configured linter over `target_paths` and emit a
+    normalised finding list. Do not auto-fix; report only.
     
-    Run the repo's configured linter (eslint/ruff/clippy/golangci-lint/etc.).
-    Emit a normalised list of `{path, line, rule, severity}`.
+    ## When to invoke
+    Plan step is `lint` OR any patch touching source files before `code-review`.
+    Skip for docs-only or asset-only changes.
+    
+    ## Procedure (follow exactly)
+    1. Detect linter from project files:
+       - `.eslintrc*` / `eslint.config.*` → `eslint --format json`.
+       - `pyproject.toml` with `[tool.ruff]` or `ruff.toml` → `ruff check
+         --output-format json`.
+       - `Cargo.toml` → `cargo clippy --message-format=json -- -D warnings`.
+       - `.golangci.yml` → `golangci-lint run --out-format json`.
+       - `.rubocop.yml` → `rubocop --format json`.
+    2. Invoke with `target_paths` only — never `--fix`, never global scope.
+    3. Parse JSON output; normalise to {path, line, column, rule, severity, msg}.
+    4. Verdict: any `error` severity → `changes-requested`; warnings only →
+       `pass` with findings attached.
+    5. Return non-zero linter exit code as `verdict: changes-requested`, never
+       swallow it.
+    
+    ## How to think
+    - Linter rule disabled in config → respect it; do not re-flag.
+    - Generated files (e.g. `dist/`, `*.pb.go`) → exclude unless explicitly in
+      `target_paths`.
+    - Linter crashes due to parse error → record as `error` severity finding
+      pointing at the offending file:line.
+    - Auto-fixable rule → still report; the fix is a separate skill.
+    
+    ## Required inputs
+    `target_paths` non-empty; `repo_root` set. If no linter is configured, STOP
+    and return `verdict: pass` with `tool_used: "none"` and confidence 0.5.
+    
+    ## Output format
+    ```json
+    {
+      "findings": [
+        {"path":"src/api/users.ts","line":42,"column":7,
+         "rule":"@typescript-eslint/no-unused-vars","severity":"error",
+         "msg":"'req' is defined but never used."},
+        {"path":"src/api/users.ts","line":88,"column":3,
+         "rule":"no-console","severity":"warning",
+         "msg":"Unexpected console statement."}
+      ],
+      "verdict": "changes-requested",
+      "tool_used": "eslint",
+      "confidence": 0.92
+    }
+    ```
+    
+    ## Quality criteria
+    Pass: every finding has rule id; severity preserved from linter; verdict
+    matches severity distribution; only `target_paths` scanned.
+    Fail: invented rule ids, dropping column info, treating warnings as errors,
+    running auto-fix.
+    
+    ## Common pitfalls
+    - Running linter from wrong cwd, picking up wrong config.
+    - Mapping linter severity inconsistently (`error` vs `2` vs `high`) — pick a
+      single normalised vocabulary and stick to it.
+    - Suppressing output when linter exits non-zero without findings (config
+      error) — must surface this.
+    
+    ## Examples
+    ✅ `ruff check src/` emits
+    `{"path":"src/foo.py","line":3,"rule":"F401","severity":"error","msg":"`os`
+    imported but unused"}`.
+    ❌ Reporting `{"rule":"unused-import"}` (non-canonical id) when ruff emits
+    `F401`.
+    
+    ## Stop condition
+    Linter ran on every target path; findings normalised; verdict set; exit code
+    honoured.
+    
+    ## Confidence guidance
+    Linter present, config detected, exit code 0 or 1 ≥0.9; linter missing 0.5;
+    linter crashed ≤0.6 (escalate). Floor 0.85 to emit `pass`.
 
 ### Skill: secret-scan
 
     
     # Skill: secret-scan
     
-    ## Task
+    ## Purpose
+    Detect API keys, tokens, private keys, and cloud credentials introduced by
+    the patch via known-pattern and high-entropy heuristics. Any confirmed hit
+    blocks the merge — no exceptions.
     
-    Detect API keys, tokens, private keys, cloud credentials in the patch
-    using high-entropy + known-pattern heuristics. Any hit = `block`.
+    ## When to invoke
+    Every patch, before `code-review` finalises. Always invoke before
+    `build-artifact` and before any `deploy-environment` step.
+    
+    ## Procedure (follow exactly)
+    1. Try tools in order: `gitleaks detect --no-git --source <repo_root>`,
+       `trufflehog filesystem --no-update <repo_root>`, `detect-secrets scan`.
+    2. If none available, use builtin regex set:
+       - AWS access key: `AKIA[0-9A-Z]{16}`
+       - AWS secret: 40-char base64 near `aws_secret`
+       - GitHub PAT: `ghp_[A-Za-z0-9]{36}`, `gho_`, `ghu_`, `ghs_`, `ghr_`
+       - GitLab PAT: `glpat-[A-Za-z0-9_\-]{20}`
+       - Slack: `xox[abprs]-[A-Za-z0-9-]+`
+       - Google API: `AIza[0-9A-Za-z\-_]{35}`
+       - Stripe: `sk_live_[0-9a-zA-Z]{24}`
+       - Private keys: `-----BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY-----`
+       - JWT: `eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+`
+       - Generic high entropy: Shannon entropy ≥ 4.5 over ≥20 char string.
+    3. Limit scan to lines added by the patch (lines starting with `+`).
+    4. For each hit, redact match in `match_preview` to first 4 + last 4 chars.
+    5. Emit `verdict: block` on ANY hit. Empty findings → `pass`.
+    
+    ## How to think
+    - Test fixtures with obvious dummy values (`AKIAIOSFODNN7EXAMPLE`) — STILL
+      flag as `minor`/`block` unless on AWS official example list; ask human.
+    - Encrypted blobs (sops, age, ansible-vault) → not a secret, but verify
+      filename/format; record as `minor` info, no block.
+    - `.env.example` with empty values → pass.
+    - Comments containing tokens → still a leak.
+    
+    ## Required inputs
+    `patch` non-empty. `repo_root` needed if tool requires filesystem access.
+    
+    ## Output format
+    ```json
+    {
+      "findings": [
+        {"severity":"critical","path":"src/config.ts","line":12,
+         "kind":"aws_access_key","match_preview":"AKIA****EXAM"}
+      ],
+      "verdict": "block",
+      "tool_used": "gitleaks",
+      "confidence": 0.98
+    }
+    ```
+    
+    ## Quality criteria
+    Pass: scanned every added line; match_preview redacted; kind set; verdict
+    matches finding count.
+    Fail: full secret printed in output, missing kind, scanning unchanged lines,
+    ignoring private-key blocks.
+    
+    ## Common pitfalls
+    - Printing the raw secret in `msg` (re-leaks it). Always redact.
+    - Trusting `# pragma: allowlist secret` without human confirmation.
+    - Missing multi-line PEM blocks because only single `+` line was inspected.
+    - Skipping binary files entirely — at least flag if entropy is suspicious.
+    
+    ## Examples
+    ✅ `{"kind":"github_pat","match_preview":"ghp_****wXyZ","line":4}`,
+    verdict `block`.
+    ❌ `{"kind":"secret","match_preview":"ghp_abcd1234...wXyZ_FULL_TOKEN_HERE"}`
+    (leaked the secret).
+    
+    ## Stop condition
+    All added lines scanned; findings emitted with redaction; verdict set.
+    
+    ## Confidence guidance
+    Tool ran on full diff with no errors ≥0.97; builtin regex only ≤0.9
+    (escalate); partial scan ≤0.7. Floor 0.95 — below it, default to `block`
+    and escalate.
 
 ### Skill: security-scan
 
     
     # Skill: security-scan
     
-    ## Task
+    ## Purpose
+    Statically analyse the patch for OWASP Top 10 categories and language-specific
+    classes of insecure code. Critical findings block the merge.
     
-    Static analysis for OWASP Top 10 categories in the patch. Use the
-    project's native tool if present (semgrep, bandit, gosec, etc.); else
-    checklist-based review.
+    ## When to invoke
+    Plan step is `security-review` OR patch touches auth, crypto, deserialisation,
+    input parsing, file I/O, subprocess, SQL, network, or templating. Always
+    invoke before `deploy-environment` to production.
+    
+    ## Procedure (follow exactly)
+    1. Detect available tools in order: `semgrep --config auto` (any lang),
+       `bandit -r` (python), `gosec ./...` (go), `brakeman` (rails),
+       `npm audit` is OUT OF SCOPE (use `dependency-audit`).
+    2. If a tool is available, run it scoped to changed files only.
+    3. If no tool is available, fall back to a checklist pass:
+       injection (SQLi, command, LDAP, XPath), authn/authz bypass, crypto misuse
+       (MD5/SHA1, ECB, static IV/salt, hardcoded keys), insecure deserialisation
+       (pickle, yaml.load, Marshal), SSRF, XXE, path traversal, open redirect,
+       unsafe templating, CORS wildcards, missing TLS verify, regex DoS.
+    4. Map each finding to an OWASP category (e.g. A03:2021-Injection).
+    5. Assign severity: RCE / auth bypass / secret exposure → `critical` →
+       verdict `block`. Privilege escalation, sensitive data leak → `major`.
+       Hardening recommendations → `minor`.
+    6. Deduplicate findings keyed by `(path, line, rule)`.
+    
+    ## How to think
+    - User input reaching a sink with no validator → injection finding, do not
+      hand-wave "framework escapes it".
+    - Crypto primitive in app code → suspect; flag unless using vetted library.
+    - Subprocess with `shell=True` and any non-literal arg → critical.
+    - Patch removes a security control → critical regardless of replacement.
+    
+    ## Required inputs
+    `patch` non-empty. If `repo_root` missing, STOP — tools cannot run.
+    
+    ## Output format
+    ```json
+    {
+      "findings": [
+        {"severity":"critical","path":"api/login.py","line":57,
+         "rule":"python.django.security.audit.sqli",
+         "msg":"raw SQL with f-string of request.GET['q']",
+         "owasp":"A03:2021-Injection"}
+      ],
+      "verdict": "block",
+      "tool_used": "semgrep",
+      "confidence": 0.97
+    }
+    ```
+    
+    ## Quality criteria
+    Pass: every finding has path+line+rule+OWASP; no critical → `pass`;
+    checklist used only when no tool available; tool_used recorded.
+    Fail: generic msgs without rule id, missing OWASP mapping, downgrading a
+    clear RCE to `major`.
+    
+    ## Common pitfalls
+    - Reporting tool noise without triage (e.g. test fixtures with intentional bad
+      crypto). Mark these `minor` with `msg` prefix "test-only:".
+    - Skipping checklist when tools fail silently.
+    - Treating `# nosec` / `# noqa` comments as authoritative — verify.
+    
+    ## Examples
+    ✅ semgrep finding `python.lang.security.audit.dangerous-subprocess-use`
+    mapped to A03, severity `critical`, verdict `block`.
+    ❌ `{"msg":"this looks insecure"}` with no rule, no line.
+    
+    ## Stop condition
+    Tool exited 0 or finished checklist; every changed file scanned; findings
+    emitted; verdict consistent (any critical → block).
+    
+    ## Confidence guidance
+    Native tool ran clean on full diff ≥0.95; checklist-only on unfamiliar lang
+    ≤0.8 (escalate); partial scan ≤0.7. Floor 0.95 — below it, emit `block` and
+    escalate to human.
 
 ### Skill: assign-sprint-goals
 
     
     # Skill: assign-sprint-goals
     
-    ## Task
+    ## Purpose
+    Write one declarative sentence per sprint that names the shippable outcome end-of-sprint. The goal is the test for whether the sprint succeeded; vague goals hide failure.
     
-    Write one sentence per sprint stating what is shippable at end-of-sprint
-    that wasn't before. No vague goals ("make progress on X"), no
-    multi-clause goals joined by "and".
+    ## When to invoke
+    Invoke when `sprints` is finalized AND every sprint has its story_ids resolved with narratives accessible.
+    Do NOT invoke to: write release notes, define KPIs, or summarize backlog state.
+    
+    ## Procedure (follow exactly)
+    1. For each sprint, read every story's narrative.
+    2. Identify the dominant user-visible outcome (the one that, if shipped alone, would justify the sprint).
+    3. Draft a single-clause sentence: subject = the user or system, verb = the new capability, object = the artifact shipped. Present tense after sprint end ("Users can sign up with email and password.").
+    4. Reject any goal containing "and", "plus", semicolons, or multiple verbs — split intent is a failure mode.
+    5. Reject vague verbs: "make progress", "improve", "work on", "explore", "investigate".
+    6. Verify ≥70% of the sprint's points contribute directly to the stated goal; if not, rewrite or surface a finding.
+    
+    ## How to think
+    - Sprint contains two unrelated themes → the sprint was badly packed; flag and propose a smaller goal covering the larger theme.
+    - Goal would require "and" → split the sprint or pick the dominant theme; never compromise with conjunction.
+    - All stories are infrastructure → the goal still names a user-visible or operator-visible capability ("Operators can roll back deployments").
+    - Sprint exists only to unblock the next sprint → still name the concrete artifact ("Schema migrations run on staging without downtime").
+    
+    ## Required inputs
+    `sprints` with story narratives accessible. Missing narratives → STOP and ask for hydrated input.
+    
+    ## Output format
+    ```json
+    {"sprint_goals":[
+      {"sprint_id":"SP1","goal":"Users can sign up and verify their email."}],
+     "rationale":"SP1's 4 stories all target the signup flow.",
+     "confidence":0.0}
+    ```
+    
+    Note: the example above intentionally illustrates the forbidden "and" — in production output, that goal must be split or rewritten as "Users can complete email-verified signup."
+    
+    ## Quality criteria
+    Passes if: every sprint has exactly one goal; no goal contains "and"/";"/multi-clause structure; no vague verbs; ≥70% of points support the goal.
+    Fails if: multi-clause goal; vague verb; goal restates the sprint id; goal lists artifacts instead of outcomes.
+    
+    ## Common pitfalls
+    - Joining two themes with "and".
+    - Saying "Make progress on auth" — vague.
+    - Listing technologies ("Ship the Postgres migration") instead of outcomes.
+    - Hiding scope by under-specifying ("Improve onboarding").
+    
+    ## Examples
+    ✅ "Users can complete email-verified signup." Single clause, user-visible, ties to ≥70% of sprint points.
+    ❌ Anti-pattern: "Improve auth and start payments." — two clauses, vague verb, unfocused.
     
     ## Stop condition
+    Every sprint has exactly one single-clause goal; no banned verbs; ≥70% of points support the goal.
     
-    Every sprint has exactly one single-clause goal.
+    ## Confidence guidance
+    Lower when: sprint contains mixed themes (≤0.75), stories lack user-visible outcomes (≤0.7), >40% of points are infra (≤0.8). ≥0.85 required.
 
 ### Skill: check-sprint-balance
 
     
     # Skill: check-sprint-balance
     
-    ## Task
+    ## Purpose
+    Emit findings about sprint packing health: over-commit, under-commit, and single-story concentration. The reviewer flags; it never rewrites the plan.
     
-    Flag sprints that are:
+    ## When to invoke
+    Invoke when `sprints` is finalized with per-story points AND `velocity` is set.
+    Do NOT invoke to: produce a final readiness score (use score-sprint-plan-quality), rewrite sprints (reviewer never rewrites), or check dependencies (use check-sprint-dependencies).
     
-    - Over-committed (points > velocity).
-    - Under-committed (points < 0.6 × velocity).
-    - Dominated by one risky story (single story > 50% of sprint).
+    ## Procedure (follow exactly)
+    1. Default velocity to 25 if absent.
+    2. For each sprint, compute `total_points` and the max single-story share = max(points) / total_points.
+    3. Emit `severity: "error"` if `total_points > velocity` (over-commit).
+    4. Emit `severity: "warn"` if `total_points < 0.6 × velocity` (under-commit) and the sprint is not the final one with no remaining stories.
+    5. Emit `severity: "warn"` if max single-story share > 0.5 (risky concentration).
+    6. Each finding includes a concrete `fix` (e.g., "move S4 (5 pts) to SP3 to reduce SP2 from 28 to 23").
+    
+    ## How to think
+    - Final sprint under 0.6 × velocity with backlog drained → not a finding.
+    - Over-commit by 1 point → still an error; reviewer is strict.
+    - One 13-point story in a 25-velocity sprint → 13/25 = 0.52 → warn.
+    - Sprint has exactly velocity points → pass; note zero slack in fix is not required.
+    
+    ## Required inputs
+    Sprints with story-level points; velocity scalar. Missing per-story points → STOP and ask for hydrated input.
+    
+    ## Output format
+    ```json
+    {"findings":[
+      {"area":"balance","severity":"error","sprint_id":"SP2",
+       "msg":"SP2 over-committed at 28 (velocity 25).",
+       "fix":"move S7 (5 pts) to SP3."}],
+     "confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every sprint evaluated against all three rules; severities correctly mapped; every finding has a concrete `fix`; no rewrite of the plan itself.
+    Fails if: missing rule check; vague fix ("rebalance the sprint"); rewriting sprints instead of flagging; mis-classified severity.
+    
+    ## Common pitfalls
+    - Calling under-commit an error (it's a warning).
+    - Ignoring the final-sprint exception for under-commit.
+    - Computing share against velocity instead of total_points.
+    - Emitting findings without a `fix` string.
+    
+    ## Examples
+    ✅ Finding: severity=warn, sprint=SP3, msg="S9 (13 pts) is 52% of SP3", fix="split S9 into S9a (5) + S9b (8) and place S9b in SP4".
+    ❌ Anti-pattern: emitting a fix that says "rebalance" with no quantities; or auto-moving stories instead of flagging.
+    
+    ## Stop condition
+    Every sprint checked against the three rules; every finding carries a concrete fix; no plan rewrite performed.
+    
+    ## Confidence guidance
+    Lower when: velocity uncalibrated (≤0.8), per-story points missing for some stories (≤0.7), team historical data absent (≤0.8). ≥0.85 required.
 
 ### Skill: check-sprint-dependencies
 
     
     # Skill: check-sprint-dependencies
     
-    ## Task
+    ## Purpose
+    Detect dependency violations across sprints: cycles, backward dependencies (story depends on a later sprint), and overlong chains that signal incorrect slicing.
     
-    Detect cross-sprint cycles and stories that depend on later sprints.
-    Flag any dependency that crosses more than two sprints (likely incorrect
-    slicing).
+    ## When to invoke
+    Invoke when every story carries `depends_on` AND every story is placed in exactly one sprint.
+    Do NOT invoke to: check balance (use check-sprint-balance), check goal coherence (use check-sprint-goal-coherence), or rewrite the sprint plan.
+    
+    ## Procedure (follow exactly)
+    1. Build a story-level DAG from `depends_on`.
+    2. Detect cycles via Kahn's algorithm. Any cycle → emit `severity: "error"` listing the cycle.
+    3. For each dependency edge A→B, locate the sprint indices of A and B. If sprint_index(A) > sprint_index(B), emit `severity: "error"`: B requires a predecessor scheduled later.
+    4. If sprint_index(B) - sprint_index(A) > 2 (predecessor more than two sprints earlier than dependent), emit `severity: "warn"` for suspected over-slicing.
+    5. Every finding includes `fix` naming the specific story to move and where.
+    6. Emit findings; do not rewrite the plan.
+    
+    ## How to think
+    - Edge within the same sprint → fine; ordering inside a sprint is the team's call.
+    - Predecessor exactly two sprints earlier → at the boundary; pass.
+    - Cycle includes ≥3 stories → still one finding; list the full cycle.
+    - Predecessor in same sprint as dependent but unscheduled before it → not this skill's concern.
+    
+    ## Required inputs
+    Story-level `depends_on`; sprint placements. Missing edges or unhydrated stories → STOP.
+    
+    ## Output format
+    ```json
+    {"findings":[
+      {"area":"dependencies","severity":"error","sprint_id":"SP1","story_id":"S2",
+       "msg":"S2 depends on S5 which is in SP3.",
+       "fix":"move S2 to SP3 or pull S5 forward to SP1."}],
+     "confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: cycles flagged as errors; backward deps flagged as errors; >2-sprint gaps flagged as warns; every finding has a concrete fix naming stories and sprints.
+    Fails if: cycle silently dropped; backward dep classified as warn; fix omits specific story_ids; plan rewritten instead of flagged.
+    
+    ## Common pitfalls
+    - Treating same-sprint dependencies as findings.
+    - Confusing story_id strings with sprint_ids in messages.
+    - Missing the cycle when it spans >2 stories.
+    - Issuing fixes like "review dependencies" without naming stories.
+    
+    ## Examples
+    ✅ Finding: severity=error, story=S2 in SP1, msg="S2 depends on S5 in SP3", fix="move S2 to SP3".
+    ❌ Anti-pattern: emitting "dependency issues found" with no story/sprint names.
+    
+    ## Stop condition
+    Every dependency edge checked; cycles, backward deps, and overlong chains each emitted with concrete fixes.
+    
+    ## Confidence guidance
+    Lower when: dependency graph sparse/incomplete (≤0.75), implicit dependencies suspected but not modeled (≤0.7), >50 stories (≤0.8). ≥0.85 required.
 
 ### Skill: check-sprint-goal-coherence
 
     
     # Skill: check-sprint-goal-coherence
     
-    ## Task
+    ## Purpose
+    Flag sprints whose goal does not describe a deliverable or whose stories do not back the stated goal. Coherence failures predict mid-sprint scope drift.
     
-    Flag a sprint when its goal does not describe a deliverable, or when
-    ≥30% of the sprint's stories don't contribute to the stated goal.
+    ## When to invoke
+    Invoke when every sprint has a `goal` AND story narratives + points are hydrated.
+    Do NOT invoke to: rewrite goals (use assign-sprint-goals), check balance/dependencies (use the dedicated skills), or score readiness (use score-sprint-plan-quality).
+    
+    ## Procedure (follow exactly)
+    1. For each sprint, parse the goal. Verify it names a concrete deliverable (a capability shipped, an artifact landed). If vague verbs ("improve", "work on", "explore") appear, emit `severity: "warn"`.
+    2. Verify the goal is single-clause. Multi-clause goal joined by "and"/";" → emit `severity: "error"`.
+    3. For each story, classify whether it directly contributes to the goal (yes/no). A story contributes if removing it would invalidate the goal sentence.
+    4. Compute the fraction of NON-contributing points: sum(points of non-contributing stories) / total_points. If > 0.30, emit `severity: "error"` for incoherence.
+    5. Every finding includes `fix`: either rewrite goal to match dominant theme, or move off-theme stories.
+    6. Emit findings; never rewrite goals or move stories.
+    
+    ## How to think
+    - Sprint contains observability + auth work, goal mentions only auth, and observability is 20% → coherent; pass.
+    - Goal says "Improve performance" with no metric → vague; warn.
+    - Goal joins "ship signup and ship login" → split-intent; error.
+    - All stories are platform plumbing, no user-visible outcome → goal must say so; if it claims user-visible value, error.
+    
+    ## Required inputs
+    Sprints with goals and hydrated story narratives + points. Missing → STOP.
+    
+    ## Output format
+    ```json
+    {"findings":[
+      {"area":"goal-coherence","severity":"error","sprint_id":"SP2",
+       "msg":"42% of SP2 points (S6, S7) do not support goal 'Users can verify their email'.",
+       "fix":"move S6,S7 to SP3 or rewrite SP2 goal to cover both themes."}],
+     "confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every goal parsed; vague verbs flagged warn; multi-clause flagged error; off-theme fraction computed against points (not story count); fixes are concrete.
+    Fails if: counting stories instead of points; missing vague-verb check; rewriting goals; missing fix.
+    
+    ## Common pitfalls
+    - Using story count instead of point fraction.
+    - Accepting "and"-joined goals because both halves are valid.
+    - Flagging infra-only sprints as incoherent when the goal correctly names the operator outcome.
+    - Issuing fixes without naming the off-theme stories.
+    
+    ## Examples
+    ✅ Finding: warn, sprint=SP1, msg="Goal verb 'improve' is vague", fix="restate goal as 'Signup completes in under 3s p95'".
+    ❌ Anti-pattern: "Goal is unclear" with no specific verb cited and no rewrite suggestion.
+    
+    ## Stop condition
+    Every sprint goal evaluated against vagueness, multi-clause, and ≤30% off-theme rules; findings carry concrete fixes.
+    
+    ## Confidence guidance
+    Lower when: stories lack narratives (≤0.7), goal references external context (≤0.75), >40% infra points (≤0.8). ≥0.85 required.
 
 ### Skill: decompose-epic-into-stories
 
     
     # Skill: decompose-epic-into-stories
     
-    ## Task
+    ## Purpose
+    Break one epic into independently shippable user stories in "As a / I want / So that" form. Each story is sprint-sized and maps to at least one acceptance criterion, enabling estimation and sequencing.
     
-    Break one epic into stories in "As a / I want / So that" form. Each
-    story:
+    ## When to invoke
+    Invoke when `epic` and its `acceptance_criteria` are both supplied AND no prior story list exists for the epic.
+    Do NOT invoke to: estimate points (use estimate-story-points), reshape epics (use group-prd-into-epics), or write technical tasks.
     
-    - Maps to ≥1 acceptance criterion.
-    - Is independently shippable.
-    - Fits into a single sprint (no story crosses sprint boundaries).
+    ## Procedure (follow exactly)
+    1. Read every AC in `acceptance_criteria`. Confirm every AC's `fr_id` belongs to `epic.fr_ids`. Mismatch → STOP.
+    2. Cluster ACs into stories by user intent, not by technical layer. Each story expresses one user-visible behavior.
+    3. Write the narrative as "As a <persona>, I want <capability>, so that <outcome>." No exceptions.
+    4. Verify each story is independently shippable: it could be released alone without breaking earlier ACs.
+    5. Verify each story fits one sprint (intuition target: 1-13 points; >13 → split before emitting).
+    6. Map each AC to exactly one story; no orphan ACs, no duplicates.
+    
+    ## How to think
+    - Story would only make sense after another story ships → still independent if it can be feature-flagged or stubbed; otherwise add a `depends_on` note.
+    - AC is purely infrastructural (logging, metrics) → attach to the story whose user behavior produces the signal.
+    - Story narrative needs "and" to be complete → split into two stories.
+    - Persona in narrative differs from epic persona → re-check the cluster.
+    
+    ## Required inputs
+    `epic.fr_ids` non-empty; `acceptance_criteria` covers those FRs; persona present. Missing → STOP.
+    
+    ## Output format
+    ```json
+    {"stories":[
+      {"story_id":"S1","epic_id":"E1",
+       "narrative":"As a new user, I want to sign up with email, so that I can access the app.",
+       "ac_ids":["AC-3","AC-4"],"notes":"depends on email service ready"}],
+     "rationale":"...","confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every AC mapped exactly once; every narrative follows "As a / I want / So that"; every story independently shippable; no story exceeds the 13-point intuition cap.
+    Fails if: layer-based slicing ("backend story", "frontend story"); multi-clause "and" narratives; orphan AC; story spanning two sprints.
+    
+    ## Common pitfalls
+    - Writing tasks instead of stories ("Implement /signup endpoint").
+    - Combining two user goals via "and".
+    - Mapping one AC to multiple stories to pad the count.
+    - Treating non-functional ACs as separate stories instead of attaching them.
+    
+    ## Examples
+    ✅ "As a returning user, I want to log in with my password, so that I can resume my session." Maps AC-7, AC-8. Independently shippable behind a flag.
+    ❌ Anti-pattern: "Build the auth backend" — task, not story; no persona; not user-visible.
     
     ## Stop condition
+    Every AC mapped exactly once; every story is a single-clause user narrative; no story >13 points by intuition.
     
-    Every acceptance criterion has a story; no story exceeds 13 points.
+    ## Confidence guidance
+    Lower when: ACs ambiguous (≤0.75), persona unstated (≤0.7), story interdependence dense (≤0.8). ≥0.85 required.
 
 ### Skill: estimate-story-points
 
     
     # Skill: estimate-story-points
     
-    ## Task
+    ## Purpose
+    Assign Fibonacci story points (1, 2, 3, 5, 8, 13) to each story relative to an anchor reference. Points reflect complexity + uncertainty + effort, not wall-clock time.
     
-    Assign Fibonacci points (1, 2, 3, 5, 8, 13) per story. Document the
-    reference story for each point value. No story may exceed 13 — split it
-    first.
+    ## When to invoke
+    Invoke when `stories` is populated AND each story has a narrative and AC mapping.
+    Do NOT invoke to: estimate plan steps (use estimate-effort), commit to dates, or re-estimate after a story split (re-run after split).
+    
+    ## Procedure (follow exactly)
+    1. Choose one story you can size with high confidence as the "3" anchor. Note its story_id.
+    2. For each remaining story, compare against the anchor along three dimensions: complexity (logic branches, integrations), uncertainty (unknowns, external deps), effort (surface area).
+    3. Pick the closest Fibonacci value. Allowed: 1, 2, 3, 5, 8, 13. No other values.
+    4. If a story scores 13 with non-trivial uncertainty, STOP and require a split — never emit 13 for a story flagged as risky in `notes`.
+    5. Build the `reference_map` showing one anchor story per used point value.
+    6. Emit `per_story` and `reference_map`.
+    
+    ## How to think
+    - Story has unknowns ("we'll figure out the API shape") → bump one Fibonacci step.
+    - Story is mechanical CRUD only → 1 or 2; never 5+ unless surface area is huge.
+    - Two stories feel identical → assign the same value.
+    - Story spans two systems → minimum 5.
+    
+    ## Required inputs
+    Each story must include narrative and `ac_ids`. Missing → STOP and ask for completed decomposition.
+    
+    ## Output format
+    ```json
+    {"estimates":{
+      "per_story":{"S1":3,"S2":5,"S3":1},
+      "reference_map":{"1":"S3","3":"S1","5":"S2"}},
+     "rationale":"S1 anchored at 3 (CRUD + 1 integration). S2=5 due to external API uncertainty.",
+     "confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every story has a value in {1,2,3,5,8,13}; reference map covers every used value; no risky story sized 13; rationale names the anchor.
+    Fails if: any non-Fibonacci value; 13 emitted for a story flagged risky; missing anchor in rationale; missing reference map.
+    
+    ## Common pitfalls
+    - Treating points as hours.
+    - Using 4, 6, or 7 — forbidden values.
+    - Re-using the anchor narrative across all values (the map must show distinct anchors).
+    - Hiding uncertainty by sizing optimistically.
+    
+    ## Examples
+    ✅ Anchor: S1 ("password login") = 3. S2 ("OAuth with Google") = 5 (one external dep). S3 ("logout button") = 1. Map populated.
+    ❌ Anti-pattern: assigning 13 to "build full payments stack" with notes saying "lots unknown" — must split first.
     
     ## Stop condition
+    Every story sized on the Fibonacci scale, reference map present, risky 13s split before emission.
     
-    Every story has a point value; reference story map is included.
+    ## Confidence guidance
+    Lower when: no clear anchor (≤0.7), heavy external dependencies (≤0.75), team velocity uncalibrated (≤0.8). ≥0.85 required.
 
 ### Skill: group-prd-into-epics
 
     
     # Skill: group-prd-into-epics
     
-    ## Task
+    ## Purpose
+    Cluster every PRD Functional Requirement into 3-8 epics. Each epic is a shippable narrative scoped to one persona or one workflow, providing the next layer for story decomposition.
     
-    Cluster PRD FRs into 3–8 epics. Each epic must:
+    ## When to invoke
+    Invoke when the PRD at `prd_path` is validated AND its FRs are numbered AND no prior epic list exists.
+    Do NOT invoke to: refine an existing epic (use decompose-epic-into-stories), group non-PRD inputs, or produce a backlog of tasks.
     
-    - Map to one persona or one workflow.
-    - Have a name in noun form ("Auth", "Checkout").
-    - List its constituent FR ids.
+    ## Procedure (follow exactly)
+    1. Read every FR. List FR id, title, and stated persona/workflow.
+    2. Cluster FRs by shared persona OR shared workflow (not by component/layer).
+    3. Aim for 3-8 epics. If the count would fall outside that range, re-cluster — never emit <3 or >8.
+    4. Name each epic in noun form ("Auth", "Checkout", "Onboarding"). Reject verb names ("Build login", "Add cart").
+    5. Verify every FR appears in exactly one epic. No duplicates, no orphans.
+    6. Write a one-line rationale per epic citing the persona or workflow.
+    
+    ## How to think
+    - FR fits two epics → pick the one whose persona owns the primary user goal; cite in rationale.
+    - Epic count > 8 → cluster sub-epics under a parent persona.
+    - Epic count < 3 → split the largest epic by workflow stage.
+    - FR is cross-cutting (logging, observability) → it belongs to a "Platform" epic, not duplicated.
+    
+    ## Required inputs
+    `prd_path` must resolve to a file with numbered FRs. Unnumbered or empty PRD → STOP and ask human.
+    
+    ## Output format
+    ```json
+    {"epics":[
+      {"epic_id":"E1","name":"Auth","persona_or_workflow":"new user",
+       "fr_ids":["FR-3","FR-4","FR-7"],"rationale":"covers signup+login flow"}],
+     "rationale":"clustered by persona; 5 epics total.",
+     "confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: 3-8 epics; every FR mapped exactly once; every epic name is a noun; every epic cites persona or workflow.
+    Fails if: any FR missing or duplicated; verb-named epic; epic without persona/workflow tag; count outside 3-8.
+    
+    ## Common pitfalls
+    - Clustering by technology layer ("Frontend", "Backend") — forbidden.
+    - Verb-form epic names like "Implement payments".
+    - Allowing one FR to live in two epics for convenience.
+    - Forgetting Platform/observability FRs and producing orphans.
+    
+    ## Examples
+    ✅ Epics: Auth, Checkout, Catalog, Platform. FR-1..FR-20 mapped one-to-one. Rationale: clustered by user-facing workflow.
+    ❌ Anti-pattern: 12 epics named "Login API", "Login UI", "Login DB" — splits by layer not persona; over the cap.
     
     ## Stop condition
+    Every FR mapped exactly once, 3-8 noun-named epics emitted, each tagged with persona or workflow.
     
-    Every FR appears in exactly one epic.
+    ## Confidence guidance
+    Lower when: PRD FRs ambiguous (≤0.7), persona unstated (≤0.75), >25 FRs (≤0.8). ≥0.85 required.
 
 ### Skill: score-sprint-plan-quality
 
     
     # Skill: score-sprint-plan-quality
     
-    ## Task
+    ## Purpose
+    Aggregate sprint-reviewer findings into a single readiness score and pass/revise verdict. Deterministic formula; no narrative judgement.
     
-    Aggregate sprint findings into 0.0–1.0.
+    ## When to invoke
+    Invoke when findings from all three sprint-reviewer check skills are present (balance, dependencies, goal-coherence).
+    Do NOT invoke to: produce findings (use the dedicated check-* skills), rewrite the plan, or score non-sprint artifacts.
     
+    ## Procedure (follow exactly)
+    1. Initialize `score = 1.0`.
+    2. Apply the deduction table:
+       - −0.20 per cyclic dependency finding (severity=error from check-sprint-dependencies, "cycle" in msg).
+       - −0.15 per over-committed sprint (severity=error from check-sprint-balance).
+       - −0.10 per incoherent goal (severity=error from check-sprint-goal-coherence).
+       - −0.05 per warn finding from any source.
+    3. Clamp `score` to [0, 1].
+    4. Set `verdict = "pass"` if `score >= 0.85`, else `"revise"`.
+    5. Write rationale citing the top two deductions by magnitude (e.g., "−0.30 from 2 cycles; −0.15 from SP2 over-commit").
+    6. Emit `readiness_score`, `verdict`, `rationale`, and `confidence`.
+    
+    ## How to think
+    - Same finding appears in two sources → count once.
+    - Warn finding contains no severity field → treat as warn (−0.05).
+    - Score is exactly 0.85 → pass (boundary inclusive).
+    - No findings → score 1.0, verdict pass; rationale "no deductions".
+    
+    ## Required inputs
+    `findings` array (possibly empty). Each finding must include `severity` and `msg`. Missing fields → STOP.
+    
+    ## Output format
+    ```json
+    {"readiness_score":0.65,"verdict":"revise",
+     "rationale":"−0.20 cycle in S2↔S5; −0.15 SP2 over-commit at 28/25.",
+     "confidence":0.0}
     ```
-    score = 1.0
-      - 0.20 per cyclic dependency
-      - 0.15 per over-committed sprint
-      - 0.10 per incoherent goal
-    verdict = "pass" if score >= 0.85 else "revise"
-    ```
+    
+    ## Quality criteria
+    Passes if: deductions match the table exactly; score clamped to [0,1]; verdict respects 0.85 threshold; rationale names two largest deductions.
+    Fails if: arithmetic error; verdict mis-flipped at boundary; rationale generic; deductions double-counted across sources.
+    
+    ## Common pitfalls
+    - Treating warn as error.
+    - Counting the same cycle twice when it appears in multiple findings.
+    - Reporting unrounded floats; round to 2 decimals.
+    - Issuing a verdict without applying the deduction table.
+    
+    ## Examples
+    ✅ Findings: 1 cycle, 1 over-commit, 1 warn. Score = 1.0 − 0.20 − 0.15 − 0.05 = 0.60 → revise. Rationale names the cycle and the over-commit.
+    ❌ Anti-pattern: emitting "looks risky" verdict without applying the formula.
+    
+    ## Stop condition
+    Score computed via the deduction table, verdict assigned at the 0.85 threshold, rationale names the largest deductions.
+    
+    ## Confidence guidance
+    This skill is deterministic — confidence should usually be 1.0. Lower only when findings are malformed (≤0.95). Floor 0.95 enforced.
 
 ### Skill: sequence-sprints
 
     
     # Skill: sequence-sprints
     
-    ## Task
+    ## Purpose
+    Pack estimated stories into sequential sprints that respect dependency order and stay within velocity. Output drives release planning and sets the boundary each sprint goal must summarize.
     
-    Pack stories into sprints respecting:
+    ## When to invoke
+    Invoke when every story has a Fibonacci point value AND a (possibly empty) `depends_on` AND `velocity` is set.
+    Do NOT invoke to: estimate (use estimate-story-points), write goals (use assign-sprint-goals), or replan after a sprint slips.
     
-    - Sum(story_points) ≤ `velocity` (default 25).
-    - Dependency order (DAG).
-    - Earliest finish for dependency-blocked stories.
+    ## Procedure (follow exactly)
+    1. Default `velocity` to 25 if absent. Reject velocities <8 or >60 as miscalibrated — STOP if so.
+    2. Build the dependency DAG over stories. Detect cycles. Cycle → STOP and emit a finding.
+    3. Greedy pack by topological depth: at each depth layer, fill the current sprint with stories until adding the next story would exceed velocity.
+    4. If a story alone exceeds velocity, STOP — it must be split first.
+    5. Prefer earliest finish for dependency-blocked stories: place them in the lowest-numbered sprint that still respects all their predecessors.
+    6. Compute `total_points` per sprint. Verify ≤ velocity and ≥ 0.6 × velocity where possible; if structural reasons prevent fill, note in rationale.
+    
+    ## How to think
+    - Two stories independent but both 13 → split sprint between them and one filler; don't pack to 26.
+    - Story has cross-epic dependency → it follows the predecessor's sprint, not its epic's natural slot.
+    - Last sprint underfilled → acceptable if no later stories exist; do not pull future work forward to pad.
+    - Velocity feels generous → keep it; do not silently inflate.
+    
+    ## Required inputs
+    Stories array with points + depends_on; velocity scalar. Missing → STOP.
+    
+    ## Output format
+    ```json
+    {"sprints":[
+      {"sprint_id":"SP1","story_ids":["S1","S3","S5"],"total_points":21},
+      {"sprint_id":"SP2","story_ids":["S2","S4"],"total_points":18}],
+     "rationale":"critical path S1→S2; SP1 packed near velocity, SP2 leaves slack for S4 unknowns.",
+     "confidence":0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: no sprint exceeds velocity; every dependency satisfied (predecessor sprint ≤ successor sprint); no orphan stories; no cycle.
+    Fails if: any over-commit; cross-sprint dependency violated; orphan story; cycle emitted as sprint.
+    
+    ## Common pitfalls
+    - Sorting by epic then packing — breaks dependencies across epics.
+    - Allowing total_points to equal velocity on every sprint (no slack for risk).
+    - Pulling future stories backward to fill a thin sprint.
+    - Treating notes/risky stories as zero-cost.
+    
+    ## Examples
+    ✅ velocity=25. SP1: S1(3)+S3(8)+S5(5)+S7(5)=21. SP2: S2(13)+S4(8)=21. Dependencies S1→S2 respected.
+    ❌ Anti-pattern: SP1 packs to 30 points "because S7 is small"; or places S2 (depends on S1) in SP1 alongside S1.
     
     ## Stop condition
+    Every story placed in exactly one sprint, every sprint within velocity, every dependency respected, no cycles.
     
-    No sprint over-committed; no dependency violated; no story orphaned.
+    ## Confidence guidance
+    Lower when: dense dependency graph (≤0.8), velocity new/uncalibrated (≤0.75), many 13-point stories (≤0.75). ≥0.85 required.
 
 ### Skill: analyze-coverage
 
     
     # Skill: analyze-coverage
     
-    ## Task
+    ## Purpose
+    Parse the supplied coverage report and emit a per-file summary,
+    flagging files below `threshold_pct` as `needs_attention`.
+    Anti-hallucination: never estimate coverage from source — only parse
+    the actual report.
     
-    Parse the coverage report (lcov/coverage.json/etc.) and emit per-file
-    line/branch coverage. Flag any file below 70% as `needs_attention`.
+    ## When to invoke
+    Plan step requests coverage analysis AND a coverage report exists at
+    `coverage_report_path` AND the report format is recognised.
+    Do NOT invoke when: report is missing, stale (older than the last
+    test run), or in a proprietary format without a parser.
+    
+    ## Procedure (follow exactly)
+    1. Detect format from extension/contents:
+       - `lcov.info` → LCOV records (TN/SF/DA/BRDA/end_of_record).
+       - `coverage.json` → Istanbul JSON (`statementMap`, `s`, `b`).
+       - `cobertura.xml` / `coverage.xml` → Cobertura XML.
+       - `coverage.out` → Go cover profile.
+    2. For each file, compute `lines_pct = covered_lines/total_lines*100`
+       and `branches_pct` when available.
+    3. Compute overall: weighted by total lines, not arithmetic mean.
+    4. Mark each file `status: "ok"` if `lines_pct >= threshold_pct` else
+       `"needs_attention"`.
+    5. Sort `needs_attention` ascending by coverage.
+    
+    ## How to think
+    - Generated files (e.g. `*.pb.go`, `dist/`) → exclude before
+      reporting; document the exclusion list.
+    - Test files themselves → exclude from coverage report consumption.
+    - Branch coverage missing → report lines only, lower confidence to
+      ≤0.8.
+    - Threshold not supplied → default 70; never invent a higher bar.
+    
+    ## Required inputs
+    `coverage_report_path` must exist and parse. Threshold is optional.
+    
+    ## Output format
+    ```json
+    {"coverage_summary": {
+       "overall_pct": 82.4,
+       "per_file": [
+         {"path": "src/a.py", "lines_pct": 91.0, "branches_pct": 78.0, "status": "ok"},
+         {"path": "src/b.py", "lines_pct": 54.0, "branches_pct": 40.0, "status": "needs_attention"}
+       ]},
+     "needs_attention": ["src/b.py"],
+     "confidence": 0.95}
+    ```
+    
+    ## Quality criteria
+    Pass: every file in the report appears in `per_file`; overall is
+    line-weighted; threshold honoured; sort order correct.
+    Fail: averaging file percentages naively; silently dropping files;
+    fabricating branch numbers when source format omits them.
+    
+    ## Common pitfalls
+    - Treating LCOV `LF`/`LH` as branches.
+    - Mixing istanbul `s` (statements) with line coverage and reporting
+      as lines without conversion.
+    - Ignoring `BRF`/`BRH` and inventing branch percentages.
+    - Counting `node_modules/` or `vendor/` paths.
+    
+    ## Examples
+    Pass: LCOV input parsed, 124 files, overall 82.4%, three files flagged.
+    Fail: outputting "overall 85%" when the report shows 70% because the
+    parser ignored a large untested file.
+    
+    ## Stop condition
+    Report parsed; per-file and overall figures emitted; needs_attention
+    list complete; no source files modified.
+    
+    ## Confidence guidance
+    Format recognised + branches present = 0.95; lines only ≤0.85;
+    partial parse (warnings emitted) ≤0.75; format guessed ≤0.6. Must be
+    ≥0.85 to emit.
 
 ### Skill: generate-puppeteer-test
 
     
     # Skill: generate-puppeteer-test
     
-    ## Task
+    ## Purpose
+    Author an end-to-end Puppeteer script that drives a real Chromium
+    session through the feature at `feature_url` and asserts observable
+    outcomes. Anti-hallucination: never invent helpers — only call ones
+    exported from `puppeteer/helpers/`.
     
-    Author a Puppeteer script under `puppeteer/tests/<feature>.test.js` that
-    exercises the feature end-to-end via a real browser.
+    ## When to invoke
+    Plan step requests browser-level coverage AND a dev server target
+    exists AND `feature_url` is reachable AND at least one acceptance
+    criterion describes user-visible behaviour.
+    Do NOT invoke for: pure unit logic, API-only flows, or features without
+    a stable URL.
     
-    ## Required coverage
+    ## Procedure (follow exactly)
+    1. Read `puppeteer/runner.js` and the modules under
+       `puppeteer/helpers/` to learn available primitives (login,
+       navigate, wait_for_idle). Do not import third-party utilities.
+    2. Create the script at `puppeteer/tests/<feature>.test.js` —
+       `<feature>` is kebab-case from the plan step title.
+    3. Structure: `setup()` → navigate → assert pre-state → perform
+       actions → assert post-state → `teardown()`.
+    4. Required coverage: one golden path + one edge case (validation
+       error, empty state, or unauthorised access).
+    5. Prefer `data-testid` selectors. If absent in the source, STOP and
+       request them rather than coupling to brittle CSS/XPath.
+    6. Run via `node puppeteer/runner.js puppeteer/tests/<feature>.test.js`
+       against a running dev server. Must exit 0.
     
-    - Golden path (success scenario).
-    - At least one edge case (validation error, empty state, or unauthorised
-      access).
+    ## How to think
+    - Flaky timing → use `waitForSelector`/`waitForFunction`, never
+      `setTimeout`.
+    - Auth required → call existing login helper, never type credentials
+      inline.
+    - Visual-only assertion → take screenshot via helper and assert DOM
+      state too; image diffs alone are not enough.
+    - Cross-origin redirects → confirm allowed in runner config or STOP.
     
-    ## Implementation
+    ## Required inputs
+    `feature_url` reachable from the test environment. Criteria must
+    describe at least one user action and one observable outcome.
     
-    Use the helpers exported by `puppeteer/helpers/`. Run via
-    `node puppeteer/runner.js <script>`.
+    ## Output format
+    ```json
+    {"puppeteer_script_path": "/abs/puppeteer/tests/checkout.test.js",
+     "rationale": "Drives golden checkout and invalid-card edge case.",
+     "confidence": 0.0}
+    ```
+    
+    ## Quality criteria
+    Pass: every action gated on an explicit wait; assertions reference DOM
+    or network state; no `sleep(N)`; script idempotent across reruns; uses
+    only existing helpers.
+    Fail: hard-coded sleeps, brittle nth-child selectors, assertions on
+    text that changes per locale without normalisation, leaked browser
+    contexts.
+    
+    ## Common pitfalls
+    - `await page.click(sel)` without `waitForSelector(sel)`.
+    - Hard-coding ports instead of reading runner config.
+    - Asserting absence with `!found` instead of `waitForSelector(..., {
+      hidden: true })`.
+    - Forgetting `browser.close()` in teardown.
+    
+    ## Examples
+    Pass:
+    ```js
+    const { launch, login } = require("../helpers");
+    module.exports = async () => {
+      const { page, browser } = await launch();
+      await login(page, "qa@example.com");
+      await page.goto(process.env.BASE_URL + "/checkout");
+      await page.waitForSelector('[data-testid="pay"]');
+      await page.click('[data-testid="pay"]');
+      await page.waitForSelector('[data-testid="confirm"]');
+      await browser.close();
+    };
+    ```
+    Fail: `await page.waitForTimeout(3000)` then `click(".btn-primary")`.
     
     ## Stop condition
+    Script saved under `puppeteer/tests/`; runner executes it; exit code 0;
+    mutating the feature breaks the script with a clear assertion message.
     
-    Script passes against a running dev server and fails with a clear message
-    when the feature is mutated.
+    ## Confidence guidance
+    Selectors absent ≤0.7; URL unreachable in env ≤0.6; criteria not
+    user-observable ≤0.75; helper missing ≤0.7. Must be ≥0.85 to emit.
 
 ### Skill: generate-regression-test
 
     
     # Skill: generate-regression-test
     
-    ## Task
+    ## Purpose
+    Write one test that reproduces the bug in `bug_report` and currently
+    fails for the documented reason. The failing test is the contract
+    handed to the coder's `fix-bug` skill. Anti-hallucination: never write
+    a test that passes on the broken code — that defeats the purpose.
     
-    Write a failing test that reproduces the bug described in `bug_report`.
-    Run it once to confirm it fails for the right reason. Hand the failing
-    test off to the coder's `fix-bug` skill.
+    ## When to invoke
+    A bug report exists with at least: repro steps, expected behaviour,
+    actual behaviour. The repro is deterministic.
+    Do NOT invoke when: bug is "sometimes slow", repro requires production
+    data, or the failure mode is not yet isolated.
+    
+    ## Procedure (follow exactly)
+    1. Detect runner (see `generate-unit-test` rules). Place the test next
+       to existing regression tests if a convention exists
+       (`tests/regression/`, `__tests__/bugs/`, …); else colocate with
+       target.
+    2. Translate repro steps into the smallest possible test: minimal
+       setup, the exact action, an assertion on the expected outcome.
+    3. Name the test after the bug ID/ticket (e.g.
+       `test_bug_1234_negative_amount_rejected`).
+    4. Run the test once against the current (broken) code. Capture the
+       failure log. The failure message MUST match the actual behaviour
+       from the bug report — not a setup error, not an import error.
+    5. If it fails for the wrong reason, fix the test until it fails for
+       the right reason. Do not modify source code in this skill.
+    
+    ## How to think
+    - Failure unrelated to the bug (e.g. `ImportError`) → fix the test
+      scaffold, do not declare success.
+    - Repro requires network → record/fixture the response; do not hit
+      live endpoints.
+    - Race condition → make the test deterministic via injected clock or
+      controlled scheduler; if you cannot, STOP and lower confidence.
+    - Bug only repros in prod data → STOP, escalate for a fixture.
+    
+    ## Required inputs
+    Repro steps must be runnable in a test environment. Expected and
+    actual must differ unambiguously.
+    
+    ## Output format
+    ```json
+    {"test_file_path": "/abs/path/test_bug_1234.py",
+     "failure_log": "AssertionError: expected 0, got -42",
+     "rationale": "Reproduces negative amount accepted in cart.",
+     "confidence": 0.0}
+    ```
+    
+    ## Quality criteria
+    Pass: test currently red; failure message names the right symptom; no
+    flakiness across 3 reruns; no source files touched.
+    Fail: test green on broken code; failure caused by missing fixture;
+    test asserts implementation detail instead of bug symptom.
+    
+    ## Common pitfalls
+    - Asserting on log text that may change after fix.
+    - Using `pytest.raises(Exception)` — be specific.
+    - Skipping the rerun-to-confirm-failure step.
+    - Touching source "just to make the test runnable".
+    
+    ## Examples
+    Pass (pytest):
+    ```python
+    def test_bug_1234_negative_amount_rejected():
+        with pytest.raises(ValueError, match="non-negative"):
+            Cart().add(item, qty=-1)
+    ```
+    Fail: `def test_bug_1234(): assert True  # TODO after fix` — passes on
+    broken code.
+    
+    ## Stop condition
+    Test file exists; runner executes it; it fails; failure log matches
+    bug report's "actual" line; no source modified.
+    
+    ## Confidence guidance
+    Repro non-deterministic ≤0.7; failure mode unclear ≤0.65; requires
+    prod data ≤0.5; runner ambiguous ≤0.75. Must be ≥0.85 to emit.
 
 ### Skill: generate-unit-test
 
     
     # Skill: generate-unit-test
     
-    ## Task
+    ## Purpose
+    Produce one focused unit test file that exercises the function/module at
+    `target_path` against the supplied acceptance criteria, using the
+    project's native runner. Anti-hallucination: never invent a runner —
+    detect it from manifests.
     
-    Write a unit test exercising the function/module at `target_path`. Use
-    the project's native runner (detected, not assumed). Include:
+    ## When to invoke
+    Plan step says "generate unit test for X" AND `target_path` exists AND
+    `acceptance_criteria` is non-empty AND no existing test file already
+    covers the same target.
+    Do NOT invoke when: criteria are vague ("test it works"), target is a
+    config/asset file, or the project lacks a configured runner.
     
-    - One test per G/W/T criterion.
-    - At least one negative test (bad input / error path).
+    ## Procedure (follow exactly)
+    1. Detect the runner by inspecting manifests in this order:
+       `pyproject.toml`/`pytest.ini` → pytest; `package.json` scripts +
+       devDeps → jest|vitest|mocha; `go.mod` → go test; `Cargo.toml` →
+       cargo test; `Gemfile` → rspec; `*.csproj` → xunit|junit. If none
+       match, STOP and lower confidence.
+    2. Locate sibling test directory (`tests/`, `__tests__/`, `_test.go`
+       neighbour, etc.). Reuse — never create a new convention.
+    3. For each acceptance criterion produce three cases: happy path, one
+       edge case (boundary, empty, null), one error path (raises/rejects).
+    4. Use the runner's idiomatic fixtures/mocks (pytest `monkeypatch`,
+       Jest `jest.mock`, Vitest `vi.mock`). Do not import production
+       network or DB code — stub at the seam.
+    5. Run the new tests once. They must pass against current code; if any
+       fail, fix the test (not the source).
+    
+    ## How to think
+    - Criterion ambiguous (no observable behaviour) → STOP, ask human.
+    - Target has side effects on import → stub at module load, lower
+      confidence to ≤0.8.
+    - Target depends on time/random → inject clock or seed; never assert
+      on `Date.now()` directly.
+    - Multiple runners installed → prefer the one referenced in CI config.
+    
+    ## Required inputs
+    `target_path` must resolve to a file. `acceptance_criteria` must contain
+    at least one G/W/T triple. Missing either → STOP.
+    
+    ## Output format
+    ```json
+    {"test_file_path": "/abs/path/test_x.py",
+     "rationale": "Covers 3 criteria, 1 happy + 1 edge + 1 error each.",
+     "confidence": 0.0}
+    ```
+    
+    ## Quality criteria
+    Pass: one assertion per behavioural claim; no test depends on another's
+    order; no real network/DB/filesystem writes outside tmp dirs; runner
+    discovers and executes the file; all new tests green.
+    Fail: shared mutable state between tests; `assert True` placeholders;
+    skipping with `xfail`/`it.skip` to make it pass; tests that mirror
+    implementation instead of behaviour.
+    
+    ## Common pitfalls
+    - Asserting log output instead of return value.
+    - Mocking the system under test itself.
+    - Using `time.sleep` to wait — use fake clock.
+    - Catching the assertion exception and continuing.
+    
+    ## Examples
+    Pass (pytest):
+    ```python
+    def test_parse_returns_iso_for_valid_input():
+        assert parse("2024-01-02") == date(2024, 1, 2)
+    
+    def test_parse_raises_on_empty():
+        with pytest.raises(ValueError):
+            parse("")
+    ```
+    Pass (Jest):
+    ```js
+    describe("parse", () => {
+      it("returns ISO for valid input", () => {
+        expect(parse("2024-01-02")).toEqual(new Date("2024-01-02"));
+      });
+      it("throws on empty", () => {
+        expect(() => parse("")).toThrow(TypeError);
+      });
+    });
+    ```
+    Fail: `def test_works(): assert True` — no behaviour exercised.
     
     ## Stop condition
+    Test file exists at the canonical location; runner discovers it without
+    config changes; every new test passes; no source file modified.
     
-    Test file exists, runner discovers it, all new tests pass against the
-    current code.
+    ## Confidence guidance
+    Runner ambiguous ≤0.75; criteria vague ≤0.7; target has unstubbed I/O
+    ≤0.8; new test directory invented ≤0.6. Must be ≥0.85 to emit.
 
 ### Skill: run-tests
 
     
     # Skill: run-tests
     
-    ## Task
+    ## Purpose
+    Execute the project's native test runner over `target` and return a
+    structured pass/fail summary. Anti-hallucination: parse the runner's
+    real output — never fabricate counts from absent data.
     
-    Execute the project's native test runner and parse pass/fail counts.
+    ## When to invoke
+    Plan step requires test execution AND a runner is detectable AND the
+    working tree is in a runnable state (deps installed, build ok).
+    Do NOT invoke when: runner not installed, target glob matches zero
+    files, or environment requires credentials not supplied.
     
-    ## Output
+    ## Procedure (follow exactly)
+    1. Resolve the runner command from project conventions:
+       - pytest: `pytest <target> -q --maxfail=0`
+       - jest: `npx jest <target> --json` (parse JSON)
+       - vitest: `npx vitest run <target> --reporter=json`
+       - mocha: `npx mocha <target> --reporter json`
+       - go test: `go test ./... -json` then aggregate
+       - cargo: `cargo test --no-fail-fast --message-format=json`
+       - rspec: `bundle exec rspec <target> --format json`
+    2. Run with a hard timeout (default 10 min). Capture stdout, stderr,
+       exit code.
+    3. Parse counts from the structured reporter when available; fall back
+       to regex on text output only when JSON is unavailable.
+    4. On failure (exit code ≠ 0 OR failed > 0), keep the last 50 lines of
+       combined output in `log_tail`.
+    5. Never retry to mask flakes. Report what happened.
     
+    ## How to think
+    - Runner missing → STOP, return clear error, do not invent counts.
+    - Coverage flags requested → defer to `analyze-coverage`; run-tests
+      only reports pass/fail.
+    - Watch mode → forbidden; always run single-shot.
+    - Partial run requested (single test) → honour `target` exactly.
+    
+    ## Required inputs
+    `runner` resolvable to an executable. `target` may be empty (means
+    "whole suite").
+    
+    ## Output format
     ```json
-    {"passed": 0, "failed": 0, "skipped": 0, "duration_ms": 0,
-     "log_tail": "last 50 lines on failure"}
+    {"passed": 42, "failed": 1, "skipped": 0, "duration_ms": 18342,
+     "log_tail": "FAIL test_x.py::test_y - AssertionError ...",
+     "exit_code": 1, "confidence": 0.95}
     ```
+    
+    ## Quality criteria
+    Pass: counts exactly match runner output; duration in ms; log_tail
+    captured only on failure; exit code propagated.
+    Fail: invented counts, summing across reruns, swallowing stderr,
+    ignoring non-zero exit when failed == 0 (means crash, not pass).
+    
+    ## Common pitfalls
+    - Treating `skipped > 0` as failure (it is not — but surface it).
+    - Parsing text when JSON reporter exists.
+    - Forgetting to escape glob patterns passed by shell.
+    - Reporting "0 failed" when the runner itself crashed (check exit
+      code first).
+    
+    ## Examples
+    Pass output for pytest:
+    ```
+    passed: 12  failed: 0  skipped: 1  duration_ms: 5421  exit_code: 0
+    ```
+    Fail (runner crash):
+    ```
+    passed: 0  failed: 0  skipped: 0  exit_code: 2
+    log_tail: "ImportError: cannot import name 'X' from 'y'"
+    ```
+    
+    ## Stop condition
+    Runner returned (or timed out); counts parsed; structured result
+    emitted; no further retries.
+    
+    ## Confidence guidance
+    JSON reporter used = 0.95; regex fallback ≤0.85; partial parse (some
+    counts missing) ≤0.75; runner timeout ≤0.6. Must be ≥0.85 to emit.
 
 ### Skill: assemble-tsd
 
     
     # Skill: assemble-tsd
     
-    ## Task
+    ## Purpose
+    Concatenate the seven authored TSD sections into `docs/tsd/<slug>.md` in the canonical order, verify no placeholders remain, and confirm cross-references resolve. The assembled file is what reviewers and downstream agents consume.
     
-    Stitch sections into `docs/tsd/<slug>.md` in this fixed order:
+    ## When to invoke
+    Invoke once all seven sections are produced and individually reviewed. Do NOT invoke to: re-author a section, fix factual content (return to the section author), or rename the slug after publication.
     
-    1. Overview
-    2. Component Contracts
-    3. Data Contracts
-    4. API Contracts
-    5. Error Model
-    6. Observability
-    7. Rollout Plan
+    ## Procedure (follow exactly)
+    1. Validate `sections` contains exactly these keys: `overview`, `component_contracts`, `data_contracts`, `api_contracts`, `error_model`, `observability`, `rollout`. Reject extras and missing.
+    2. Concatenate in this fixed order:
+       1. Overview
+       2. Component Contracts
+       3. Data Contracts
+       4. API Contracts
+       5. Error Model
+       6. Observability
+       7. Rollout Plan
+    3. Prepend a YAML front-matter block with `slug`, `created_at` (UTC), and `tsd_version: 1`.
+    4. Scan for placeholder markers (`<...>`, `TODO`, `TBD`, `FIXME`). If any remain, STOP and return the offending section names.
+    5. Resolve cross-links: ensure every `(see PRD §...)` references a known PRD goal id, every error code referenced in API Contracts exists in Error Model, every metric in Rollout exists in Observability.
+    6. Write to `docs/tsd/<slug>.md`. Do not overwrite an existing file silently — append `-v2`, `-v3` if needed.
+    
+    ## How to think
+    - This skill is a stitcher, not an editor. Do not rewrite section content.
+    - A missing section is a hard stop. Do not synthesize.
+    - Filename collisions usually indicate a duplicate effort; check with caller before bumping versions.
+    
+    ## Required inputs
+    All seven section keys must be present and non-empty. `slug` must match `^[a-z0-9][a-z0-9-]{1,63}$`.
+    
+    ## Output format
+    `{"tsd_path": "/abs/path/docs/tsd/<slug>.md", "confidence": 0.0}`
+    
+    ## Quality criteria
+    Passes if: all seven headings present in order; no placeholders; cross-links resolve; front-matter populated; file written atomically.
+    Fails if: any section missing; placeholders remain; broken cross-links; overwriting without versioning.
+    
+    ## Common pitfalls
+    - Allowing extra keys in `sections` and silently appending them.
+    - Failing to detect a `TBD` hidden inside a code fence.
+    - Overwriting a published TSD instead of versioning.
+    - Forgetting the YAML front-matter.
+    
+    ## Examples
+    Good: file `docs/tsd/orders-v1.md` with front-matter, seven headings in order, no placeholders, all cross-refs resolve.
+    Bad: file missing the Error Model section; contains `<fill in later>`; references error code `FOO` that is not in the Error Model.
     
     ## Stop condition
+    File exists at `docs/tsd/<slug>.md`, contains exactly the seven canonical sections in order, front-matter is present, no placeholder markers remain, and every cross-reference resolves to a real anchor.
     
-    All seven headings present; no `<...>` placeholders; PRD cross-links
-    resolve.
+    ## Confidence guidance
+    Lower when: section authors marked their confidence < 0.85 (≤0.8 — assembly cannot raise quality), placeholders had to be flagged (≤0.6), slug collision required versioning (≤0.8). Need ≥0.85.
 
 ### Skill: check-tsd-completeness
 
     
     # Skill: check-tsd-completeness
     
-    ## Task
+    ## Purpose
+    Verify the TSD has all seven canonical sections, each non-empty and substantively populated, and that every PRD functional requirement maps to at least one component contract or API contract entry. Findings only — never modify the TSD.
     
-    Verify the TSD has all seven sections and each is non-empty. Verify
-    every PRD FR has a matching component contract or API contract entry.
+    ## When to invoke
+    Invoke after `assemble-tsd` and before scoring. Do NOT invoke to: judge whether contracts are right (that's `check-tsd-implementability` and `check-tsd-contract-consistency`), or to rewrite sections.
+    
+    ## Procedure (follow exactly)
+    1. Load the TSD at `tsd_path`. Locate the seven canonical H2 headings in order: Overview, Component Contracts, Data Contracts, API Contracts, Error Model, Observability, Rollout Plan.
+    2. For each missing heading, emit a finding `{section, kind: "incomplete", msg, fix}`.
+    3. For each present heading, check the section body is more than a placeholder. A section under 100 words OR containing only a heading + empty list is `incomplete`.
+    4. Load the linked PRD (resolve from Overview cross-refs). For each FR id in the PRD, confirm it appears at least once in either Component Contracts or API Contracts. Missing FRs become findings.
+    5. Confirm: every error-model code is referenced by at least one component or API; every observability metric has a target; every rollout flag has a gated FR.
+    6. Emit findings only. Do not rewrite. Do not edit the TSD.
+    
+    ## How to think
+    - A section can be "present but empty"; word count and structure both matter.
+    - Completeness is binary per check; report each gap separately.
+    - Missing FR coverage is the most expensive miss — be exhaustive.
+    - Do not infer that an FR is covered without an explicit textual reference.
+    
+    ## Required inputs
+    `tsd_path` must exist and be readable. If the file cannot be parsed as markdown with H2 sections, STOP.
+    
+    ## Output format
+    ```
+    {"findings": [{"section": "Error Model", "kind": "incomplete", "msg": "FR-7 has no error code", "fix": "Add an error class covering FR-7's failure path"}], "confidence": 0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every missing/empty section reported; every uncovered FR reported; every dangling error code or metric reported; no false positives.
+    Fails if: silently passing an empty section; flagging non-issues; rewriting the TSD; missing FR coverage gaps.
+    
+    ## Common pitfalls
+    - Counting placeholder text (`TBD`) as content.
+    - Skipping the PRD round-trip because it's tedious.
+    - Conflating completeness with consistency (that's a different skill).
+    - Reporting prose-style suggestions instead of structured findings.
+    
+    ## Examples
+    Good: finding `{section: "Observability", kind: "incomplete", msg: "NFR-3 (p95<250ms) has no metric", fix: "Add http_request_duration_ms histogram with route label"}`.
+    Bad: finding `{msg: "the spec feels thin"}` — not actionable, not structured.
+    
+    ## Stop condition
+    A findings list exists covering every missing section, empty section, uncovered FR, dangling error code, and unmeasured NFR; the TSD was not modified.
+    
+    ## Confidence guidance
+    Lower when: PRD FR ids absent (≤0.85 — coverage check is approximate), TSD structure non-standard (≤0.9), sections present but ambiguous in scope (≤0.9). Required floor 0.95.
 
 ### Skill: check-tsd-contract-consistency
 
     
     # Skill: check-tsd-contract-consistency
     
-    ## Task
+    ## Purpose
+    Cross-check the four contract pairs that must agree across the TSD: API status codes ↔ Error Model entries; API request/response schemas ↔ Data Contracts; Component dependencies ↔ Component existence; Observability log events ↔ Error Model codes. Findings only — never edit the TSD.
     
-    Cross-check every contract pair:
+    ## When to invoke
+    Invoke after `check-tsd-completeness` and `check-tsd-implementability`. Do NOT invoke to: judge whether contracts are correct individually (that's implementability), or to score readiness (that's `score-tsd-readiness`).
     
-    - API status codes ↔ error model entries.
-    - API request schemas ↔ data contract types.
-    - Component dependencies ↔ component existence.
-    - Observability log events ↔ error model.
+    ## Procedure (follow exactly)
+    1. **API ↔ Error Model**: enumerate every non-2xx status code in API Contracts. For each, confirm the referenced error code exists in Error Model. Conversely, list error codes never referenced by any API or component — flag as unreachable.
+    2. **API ↔ Data Contracts**: every field in a request/response schema that names an entity must `$ref` a defined entity. Inline shapes that duplicate entity fields are inconsistencies (suggest `$ref`).
+    3. **Component dependencies ↔ Component existence**: every name in `Dependencies` must match a `### <Name>` subsection in Component Contracts.
+    4. **Observability logs ↔ Error Model**: every error code should be emittable via at least one log event; every log event referencing a code must reference one that exists.
+    5. **Rollout ↔ Observability**: every abort criterion must reference a metric defined in Observability.
+    6. Emit one `{section, kind: "inconsistent", msg, fix}` per mismatch. Do not rewrite the TSD.
     
-    Flag every mismatch.
+    ## How to think
+    - Both directions matter: missing references AND orphan definitions.
+    - Spelling counts: `AUTH_EXPIRED` and `AUTH-EXPIRED` are different codes; flag the mismatch.
+    - An inline duplicate of an entity is a future divergence bug; treat it as inconsistent.
+    - Do not let "obvious" implicit links pass; if it isn't textual, it isn't a link.
+    
+    ## Required inputs
+    `tsd_path` must point to a TSD with all seven sections present. If sections are missing, defer to `check-tsd-completeness` first.
+    
+    ## Output format
+    ```
+    {"findings": [{"section": "API Contracts", "kind": "inconsistent", "msg": "POST /orders returns 409 ORDER_CONFLICT but ORDER_CONFLICT is not in Error Model", "fix": "Add ORDER_CONFLICT to Error Model with recovery client-fix-input"}], "confidence": 0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every API status code resolves to an error code; every component dependency exists; every entity ref is a `$ref` not an inline duplicate; every log code exists; every abort metric exists.
+    Fails if: any unresolved code, dangling dependency, duplicated shape, or orphan metric goes unreported; redesigns suggested.
+    
+    ## Common pitfalls
+    - Treating two different spellings as the same code.
+    - Letting inline schemas pass because they look right.
+    - Missing the orphan direction (defined but unused).
+    - Reporting a single finding for a class of issues instead of one per occurrence.
+    
+    ## Examples
+    Good: `{section: "Observability", kind: "inconsistent", msg: "log event order.rejected references code ORDER_DENIED not in Error Model", fix: "Rename to ORDER_REJECTED or add ORDER_DENIED to Error Model"}`.
+    Bad: `{msg: "contracts feel out of sync"}` — not actionable, not located.
+    
+    ## Stop condition
+    A findings list exists with one entry per inconsistency across all five cross-checks; both missing-reference and orphan-definition directions covered; the TSD was not modified.
+    
+    ## Confidence guidance
+    Lower when: codes use inconsistent casing/separators across sections (≤0.9), schema references use ad-hoc rather than `$ref` (≤0.9), Observability not yet finalized (≤0.9). Required floor 0.95.
 
 ### Skill: check-tsd-implementability
 
     
     # Skill: check-tsd-implementability
     
-    ## Task
+    ## Purpose
+    For every component contract, determine whether a coding agent could implement it from the text alone, without consulting humans or guessing. Findings only — never edit the TSD.
     
-    For each component contract, decide if a coding agent could implement it
-    from the text alone. Flag any spec that:
+    ## When to invoke
+    Invoke after `check-tsd-completeness`. Do NOT invoke to: judge whether the design is good (architectural review), or to estimate effort.
     
-    - Mentions a library/API not in the architecture doc.
-    - Has a method without a signature.
-    - Has a failure mode without a recovery rule.
+    ## Procedure (follow exactly)
+    1. Read the Component Contracts section.
+    2. For each component, check:
+       a. Every method has a full typed signature (no unresolved `Any`, no missing return type).
+       b. Every dependency names a component that exists elsewhere in the TSD.
+       c. Every failure mode has a stable code AND a recovery rule.
+       d. Every library or external API mentioned appears in the Overview or tech stack; flag any that don't.
+       e. Invariants are checkable (testable predicates), not aspirational adjectives.
+    3. Cross-check Data Contracts: every entity referenced by a component has a JSON Schema; every entity in Data Contracts is reachable from some component.
+    4. Emit `{section, kind: "unimplementable", msg, fix}` per gap.
+    5. Do not propose redesigns. Suggest the minimum fix that closes the gap.
+    
+    ## How to think
+    - "Could a freshly-hired engineer implement this with no Slack access?" If no, flag.
+    - Adjectives like "robust", "scalable", "fast" are unimplementable until tied to a metric.
+    - Catch invented libraries: cross-check against `select-tech-stack` output.
+    - Unbounded recursion of dependencies is a red flag; flag it.
+    
+    ## Required inputs
+    `tsd_path` must point to a TSD that has at least Component Contracts and Data Contracts sections present.
+    
+    ## Output format
+    ```
+    {"findings": [{"section": "Component Contracts", "kind": "unimplementable", "msg": "OrderService.place has no return type", "fix": "Declare return type as OrderId | OUT_OF_STOCK"}], "confidence": 0.0}
+    ```
+    
+    ## Quality criteria
+    Passes if: every untyped signature flagged; every uncoded failure mode flagged; every uncited library flagged; every aspirational invariant flagged.
+    Fails if: false negatives on missing signatures; redesign suggestions; rewriting the TSD.
+    
+    ## Common pitfalls
+    - Letting `Any` through "because it's obvious".
+    - Accepting "should be reliable" as an invariant.
+    - Missing libraries imported via prose ("we'll use stripe-sdk") that don't appear in the tech stack.
+    - Reporting style nits instead of implementability gaps.
+    
+    ## Examples
+    Good: `{section: "Component Contracts", kind: "unimplementable", msg: "Worker.process_job uses redis but redis not in tech stack", fix: "Add redis to select-tech-stack output or replace with the chosen queue"}`.
+    Bad: `{msg: "I'd refactor this into two components"}` — that's a redesign, not implementability.
+    
+    ## Stop condition
+    A findings list exists naming every untyped signature, uncoded failure mode, uncited dependency, missing entity reference, and unmeasurable invariant; the TSD was not modified.
+    
+    ## Confidence guidance
+    Lower when: tech stack ambiguous (≤0.9), failure modes lack codes systemically (≤0.9), signatures use a non-standard syntax that's hard to parse (≤0.9). Required floor 0.95.
 
 ### Skill: score-tsd-readiness
 
     
     # Skill: score-tsd-readiness
     
-    ## Task
+    ## Purpose
+    Aggregate all reviewer findings into a single readiness score and a pass/revise verdict. The score gates whether the TSD proceeds to implementation; the verdict is the contract the orchestrator reads.
     
-    Aggregate findings to 0.0–1.0 + verdict.
+    ## When to invoke
+    Invoke after all three reviewer skills have run and their findings are merged. Do NOT invoke to: re-check the TSD, rewrite findings, or produce qualitative narratives.
     
-    ## Scoring
+    ## Procedure (follow exactly)
+    1. Parse `findings`. Each finding must have a `kind` in {`incomplete`, `inconsistent`, `unimplementable`}; ignore any others and report parse errors.
+    2. Compute:
+       ```
+       score = 1.0
+         - 0.25 per finding where kind == "incomplete"
+         - 0.20 per finding where kind == "inconsistent"
+         - 0.15 per finding where kind == "unimplementable"
+       floor score at 0.0
+       ```
+    3. Set `verdict = "pass"` iff `score >= 0.90`, else `"revise"`.
+    4. Round score to 2 decimals.
+    5. Return the score, verdict, and your confidence in the aggregation.
     
+    ## How to think
+    - This is a deterministic aggregator. Do not adjust the formula for taste.
+    - Confidence is about parsing accuracy, not about the TSD quality.
+    - If many findings cluster around one cause, that does not change the math.
+    - Verdict thresholds are hard cutoffs; 0.899 is `revise`.
+    
+    ## Required inputs
+    `findings` must be a list (possibly empty). Each item must be a dict with at least `kind`. Empty list yields `score=1.0`, `verdict="pass"`.
+    
+    ## Output format
     ```
-    score = 1.0
-      - 0.25 per `incomplete`
-      - 0.20 per `inconsistent`
-      - 0.15 per `unimplementable`
-    floor at 0.0
-    verdict = "pass" if score >= 0.90 else "revise"
+    {"readiness_score": 0.85, "verdict": "revise", "confidence": 0.98}
     ```
+    
+    ## Quality criteria
+    Passes if: arithmetic exact per the formula; verdict matches threshold; rounding to 2 decimals; floor at 0.0 applied.
+    Fails if: weights tweaked; verdict threshold deviates from 0.90; unrecognized kinds silently ignored without reporting.
+    
+    ## Common pitfalls
+    - "Adjusting" the score because the findings feel minor.
+    - Forgetting to floor at 0.0 when many findings push it negative.
+    - Confusing the input's per-finding `confidence` with this skill's aggregation confidence.
+    - Reporting verdict `pass` at 0.89.
+    
+    ## Examples
+    Good: 1 incomplete + 1 inconsistent → score `1.0 - 0.25 - 0.20 = 0.55`, verdict `revise`.
+    Bad: 1 incomplete → rounding up to `0.80`, calling it `pass`.
+    
+    ## Stop condition
+    A single object is produced with `readiness_score` (2-decimal float), `verdict` (`pass` or `revise`), and `confidence`. The TSD was not modified. No findings were dropped without a parse-error report.
+    
+    ## Confidence guidance
+    Lower when: findings contain unrecognized kinds (≤0.95), findings duplicate the same issue (≤0.95 — caller may want dedup), input list size very large (>50) raising parse risk (≤0.95). Required floor 0.95.
 
 ### Skill: write-api-contracts
 
     
     # Skill: write-api-contracts
     
-    ## Task
+    ## Purpose
+    Define every HTTP endpoint with its method, path, request and response JSON Schemas, auth requirements, rate-limit category, and worked examples. After this section, a backend agent can implement endpoints without inventing shapes, and a frontend agent can call them without reverse-engineering.
     
-    For each endpoint:
+    ## When to invoke
+    Invoke after Data Contracts. Do NOT invoke to: implement an endpoint (use implement-endpoint), describe internal RPC between components (Component Contracts), or document third-party APIs (link to vendor docs in Overview).
     
-    - METHOD + URL pattern
-    - Request schema (path / query / body)
-    - Response schema (200, plus every non-2xx in the error model)
-    - Authn / authz requirements
-    - Rate limit category
-    - One example request + response per status
+    ## Procedure (follow exactly)
+    1. For each FR that implies an external call, emit a `### <METHOD> <path>` subsection.
+    2. Inside each subsection list:
+       - **Auth**: `none` | `bearer` | `session` | named scopes; cite component that enforces it.
+       - **Rate limit**: a category like `low`, `default`, `burst-tolerant`.
+       - **Request**: JSON Schema for `path`, `query`, `body` (each as a separate sub-schema).
+       - **Responses**: `200` (or `201`, `204`) JSON Schema referencing data contracts by `$ref` whenever possible, plus one entry for every non-2xx status from the error model.
+       - **Examples**: at least one request/response pair per declared status code, fenced as ```json.
+    3. Reference data contracts via `$ref: "#/data-contracts/User"`; do not inline shapes that already exist as entities.
+    4. Reference error model codes by stable id (e.g. `AUTH_EXPIRED`) in each non-2xx response.
+    5. Do not invent endpoints not implied by an FR. Do not omit endpoints that an FR clearly requires.
+    
+    ## How to think
+    - One FR may map to several endpoints (CRUD). Make the mapping explicit per endpoint.
+    - Path conventions: nouns, plural, kebab/lowercase. No verbs in paths.
+    - If two endpoints differ only by query, keep them as one with query-driven behavior.
+    - If a response shape is new (not an entity), STOP and ask whether to extend data contracts.
+    
+    ## Required inputs
+    Both inputs must be non-empty. If `data_contracts` lacks an entity that an endpoint plainly needs, STOP — extend data contracts first.
+    
+    ## Output format
+    Markdown starting with `## API Contracts`. Each endpoint has `### METHOD /path`, then bolded sub-headings (Auth, Rate limit, Request, Responses, Examples), with fenced JSON Schemas.
+    
+    ## Quality criteria
+    Passes if: every FR with an external surface has at least one endpoint; every request field types to a data contract or primitive; every status code appears in the error model; every status has an example.
+    Fails if: endpoints invented without FR; status codes referenced but missing from error model; response shapes that don't $ref entities they should; examples missing.
+    
+    ## Common pitfalls
+    - Verbs in paths (`/getUser`).
+    - Returning a 200 with `{error: ...}` instead of a proper non-2xx.
+    - Duplicating entity fields inline rather than `$ref`.
+    - Forgetting the 4xx for validation failure.
+    
+    ## Examples
+    Good: `POST /v1/orders` with body `$ref Order`, response 201 `$ref Order`, 400 `VALIDATION_FAILED`, 401 `AUTH_EXPIRED`, with examples.
+    Bad: `POST /createOrder` returning 200 with a free-form error payload; no error codes referenced.
     
     ## Stop condition
+    Section exists, every FR with an external surface is covered, every endpoint has Auth/Rate/Request/Responses/Examples, every status code maps to an error model entry, and every reusable shape uses `$ref` to data contracts.
     
-    Every request schema field maps to a data-contract type; every status
-    code in the response maps to an entry in the error model.
+    ## Confidence guidance
+    Lower when: FR doesn't specify endpoint count (≤0.75), error model not yet written (≤0.7 — forward refs risky), data contracts incomplete (≤0.7), auth model unclear (≤0.75). Need ≥0.85.
 
 ### Skill: write-component-contracts
 
     
     # Skill: write-component-contracts
     
-    ## Task
+    ## Purpose
+    For every component in the architecture, document the four binding fields a coding agent needs: public interface, invariants, dependencies, failure modes. After this section, an implementer should never have to ask "what does this component do" or "what can go wrong".
     
-    For each component, document:
+    ## When to invoke
+    Invoke after the Overview section is written and before Data/API Contracts. Do NOT invoke to: implement the component (use implement-service), describe HTTP endpoints (those go in API Contracts), or write tests.
     
-    - Public interface (functions / methods with signatures).
-    - Invariants (always-true properties).
-    - Dependencies (named other components).
-    - Failure modes (what it returns / raises on each failure).
+    ## Procedure (follow exactly)
+    1. List components in the same order as the architecture diagram.
+    2. For each component emit a `### <Name>` subsection containing:
+       - **Public interface**: every function/method with full typed signature. No `Any`, no `**kwargs` unless forwarded verbatim. No private members.
+       - **Invariants**: bullet list of always-true properties (e.g. "queue length never exceeds 10000", "idempotency key required on writes").
+       - **Dependencies**: bullet list naming OTHER components from the architecture; never invent.
+       - **Failure modes**: bullet list pairing each failure with its return value or raised error code (stable id like `QUEUE_FULL`).
+    3. Use language-neutral type syntax (`fn fetch(user_id: uuid) -> User | NotFound`). Do not commit to a specific framework here.
+    4. Cross-link failure mode codes to the future Error Model section by code id.
+    
+    ## How to think
+    - If a method's signature is unclear, STOP and ask architect; do not invent.
+    - Invariants are checkable assertions, not aspirations. Avoid "fast" or "robust".
+    - Dependencies must match component names exactly. Renaming breaks the diagram.
+    - Each failure mode must have a recovery rule (return null, retry, raise to caller).
+    
+    ## Required inputs
+    `architecture` must contain a non-empty `components` list with at least name + role per entry. If a component has no role description, STOP.
+    
+    ## Output format
+    Markdown starting with `## Component Contracts`, one `### <Name>` per component, each with the four bolded fields. No tables required, bullet lists fine.
+    
+    ## Quality criteria
+    Passes if: every component has all four fields populated; signatures are typed; dependency names match the diagram; every failure mode has a code and a recovery rule.
+    Fails if: any field empty; method signature missing types; invented dependency; vague invariants ("should be reliable").
+    
+    ## Common pitfalls
+    - Listing private helpers in the public interface.
+    - Writing invariants that are not testable.
+    - Failure modes without codes — the error model can't index them later.
+    - Coupling to a specific framework (`@app.route` here).
+    
+    ## Examples
+    Good: `fn enqueue(job: Job) -> JobId | QUEUE_FULL` with invariant "queue size ≤ MAX_QUEUE" and recovery "caller retries with backoff".
+    Bad: `enqueue(job)` with no return, invariant "should work", no failure modes.
     
     ## Stop condition
+    Section exists with one subsection per component, all four fields populated for each, every failure mode carries a stable code, and a coding agent could implement any component without asking follow-up questions.
     
-    Every component in the architecture has all four fields populated. A
-    coding agent should be able to implement it without follow-up questions.
+    ## Confidence guidance
+    Lower when: architecture didn't pre-define methods (≤0.75), failure modes are guessed (≤0.7), >10 components (≤0.8 — risk of inconsistency), dependencies form cycles (≤0.6). Need ≥0.85.
 
 ### Skill: write-data-contracts
 
     
     # Skill: write-data-contracts
     
-    ## Task
+    ## Purpose
+    Translate each entity from the ER diagram into a precise JSON Schema (or equivalent) covering types, nullability, units, primary keys, uniqueness, validation rules, and lifecycle fields. Downstream API contracts will reference these by entity name; ambiguity here propagates into every endpoint.
     
-    For each entity:
+    ## When to invoke
+    Invoke after Component Contracts and before API Contracts. Do NOT invoke to: write migrations (a backend skill), define DTOs that diverge from entities (use API Contracts), or pick a specific datastore syntax.
     
-    - Field list with types + nullability + units.
-    - Primary key + uniqueness constraints.
-    - Validation rules (regex, range, enum).
-    - Lifecycle (created_at, updated_at, soft-delete?).
+    ## Procedure (follow exactly)
+    1. For each entity in `data_model`, emit a `### <Entity>` subsection with a JSON Schema fenced as ```json.
+    2. Fields must include: `type`, `nullable` (explicit true/false), `unit` when numeric (e.g. `"unit": "ms"`), and `description`.
+    3. Mark the primary key under `x-primary-key`. Mark uniqueness constraints under `x-unique` as an array of field-name arrays.
+    4. Add validation: `pattern` for strings, `minimum`/`maximum` for numbers, `enum` for closed sets, `maxLength` for every string field (no unbounded strings).
+    5. Add lifecycle fields `created_at` (datetime, not null), `updated_at` (datetime, not null), and `deleted_at` (datetime, nullable) only if soft-delete is required by a requirement.
+    6. Do NOT use ORM types (`varchar`, `BIGINT`). Do NOT reference physical indices.
     
-    JSON Schema or equivalent; no ORM-specific syntax.
+    ## How to think
+    - Every string needs a length bound; unbounded strings are a security hole.
+    - `nullable` must be explicit; default-undefined is ambiguous.
+    - If validation rules conflict with the ER diagram, the ER diagram wins for shape, this skill wins for constraints.
+    - If a field's unit is ambiguous (cents vs dollars), STOP and ask.
+    
+    ## Required inputs
+    `data_model` must contain at least one entity with attributes. If the diagram has entities with no attributes, STOP.
+    
+    ## Output format
+    Markdown starting with `## Data Contracts`. Each entity gets a `### <Entity>` with a fenced JSON Schema block including `properties`, `required`, `x-primary-key`, optional `x-unique`.
+    
+    ## Quality criteria
+    Passes if: every entity rendered; every string has `maxLength`; every nullable explicit; PK marked; lifecycle fields consistent; enums fully enumerated.
+    Fails if: unbounded strings; ORM types; PK missing; nullable unspecified; ambiguous units.
+    
+    ## Common pitfalls
+    - `"type": "string"` with no `maxLength`.
+    - Mixing units (seconds vs milliseconds) across fields without declaring `unit`.
+    - Adding indices or storage hints (out of scope).
+    - Diverging field names from the ER diagram.
+    
+    ## Examples
+    Good: `{"email": {"type": "string", "maxLength": 320, "pattern": "^[^@]+@[^@]+$", "nullable": false}}` with `x-primary-key: id` and `x-unique: [["email"]]`.
+    Bad: `{"email": "varchar"}`, no length, no nullability, no PK.
     
     ## Stop condition
+    Section exists with one JSON Schema per entity, every field typed and bounded, every PK and uniqueness constraint declared, lifecycle handled consistently, and zero ORM-specific syntax.
     
-    Every entity has all four fields; no `string` field is left without a
-    length bound.
+    ## Confidence guidance
+    Lower when: ER diagram lacks attributes (≤0.7), units ambiguous (≤0.7), enums infer from PRD prose (≤0.75), soft-delete need unclear (≤0.8). Need ≥0.85.
 
 ### Skill: write-error-model
 
     
     # Skill: write-error-model
     
-    ## Task
+    ## Purpose
+    Enumerate every distinct error class the system can produce, with a stable code, HTTP status (when applicable), user-facing message, the conditions under which it is raised, and a recovery path. The error model is the single source of truth referenced by API Contracts, Component Contracts, and Observability.
     
-    A taxonomy of all error classes with:
+    ## When to invoke
+    Invoke after Component Contracts and before/alongside API Contracts so APIs can reference codes. Do NOT invoke to: catalog third-party library exceptions verbatim (translate to our codes), or add ad-hoc errors for one endpoint (extend the model instead).
     
-    - Code (stable identifier, e.g. `AUTH_EXPIRED`).
-    - HTTP status (where applicable).
-    - User-facing message (or null if internal).
-    - When raised.
-    - Recovery path (retry / refresh / give up).
+    ## Procedure (follow exactly)
+    1. Walk Component Contracts and FRs; collect every failure path mentioned.
+    2. For each distinct failure, emit a row with: `code`, `http_status` (or `null`), `user_message` (or `null` if internal), `when_raised`, `recovery`.
+    3. Codes use `SCREAMING_SNAKE_CASE`, stable, namespaced when useful (e.g. `AUTH_EXPIRED`, `ORDER_NOT_FOUND`).
+    4. Recovery is one of: `retry`, `refresh-token`, `client-fix-input`, `escalate`, `give-up`. Pick exactly one.
+    5. Group errors into subsections by domain (Auth, Validation, Business, Infrastructure) when there are ≥10 codes.
+    6. No duplicate codes. No two codes describing the same failure.
+    
+    ## How to think
+    - If a failure has identical recovery and identical user impact as an existing code, merge them.
+    - Internal-only errors (worker crashes, DB timeouts) still need codes for logs/metrics, with `user_message: null`.
+    - HTTP status is for HTTP-surfaced errors; CLI/worker codes leave it null.
+    - Wording the user message: actionable and short, no stack traces.
+    
+    ## Required inputs
+    `functional_requirements` must be non-empty. If component contracts are not yet written, the model can still be drafted but mark `confidence ≤ 0.8` because forward-ref risk is high.
+    
+    ## Output format
+    Markdown starting with `## Error Model`, then a table or bullet list with the five fields per code. Example row format:
+    ```
+    - AUTH_EXPIRED — 401 — "Please sign in again." — when bearer token's `exp` claim < now — refresh-token
+    ```
+    
+    ## Quality criteria
+    Passes if: every code unique; every code has all five fields; every API Contracts non-2xx references a code that exists here; recovery is one of the allowed verbs.
+    Fails if: duplicate codes; missing field; free-form recovery prose; user_message exposing internals.
+    
+    ## Common pitfalls
+    - Leaking exception class names (`SQLAlchemyError`) into codes.
+    - Vague recovery (`"handle it"`).
+    - Mixing user-facing and internal entries without marking which is which.
+    - Adding codes that no contract references.
+    
+    ## Examples
+    Good: `ORDER_NOT_FOUND — 404 — "Order not found." — when GET /orders/{id} resolves to no row — client-fix-input`.
+    Bad: `Error1 — 500 — null — sometimes — handle`.
     
     ## Stop condition
+    Section exists, every code is unique with all five fields populated, every API and component-contract failure resolves to a code here, recovery verbs are from the closed set, and grouping is applied if ≥10 codes.
     
-    Every error has all five fields; no duplicate codes.
+    ## Confidence guidance
+    Lower when: component contracts not yet finalized (≤0.8), recovery semantics unclear for some failures (≤0.75), user_message wording requires product approval (≤0.8), >25 codes (≤0.8 — duplication risk). Need ≥0.85.
 
 ### Skill: write-observability-spec
 
     
     # Skill: write-observability-spec
     
-    ## Task
+    ## Purpose
+    Define exactly what the system measures, logs, traces, and budgets. Every numeric NFR must be observable; every error-model entry must be loggable. After this section, an SRE can wire dashboards and alerts without guessing names.
     
-    Three subsections:
+    ## When to invoke
+    Invoke after Component Contracts, Error Model, and API Contracts. Do NOT invoke to: configure a specific monitoring vendor (out of scope), pick log retention windows (ops decision), or define on-call rotations.
     
-    1. **Metrics** — name, type (counter/gauge/histogram), labels, target.
-    2. **Logs** — event name + structured field schema + level.
-    3. **Traces** — spans + parent/child relations.
+    ## Procedure (follow exactly)
+    1. **Metrics**: emit a table with `name`, `type` (`counter`|`gauge`|`histogram`), `labels[]`, `unit`, `target` (the NFR it satisfies, by id). Names: `<domain>_<thing>_<unit>` e.g. `http_request_duration_ms`.
+    2. **Logs**: emit a structured-event table with `event_name`, `level` (`debug`|`info`|`warn`|`error`), `fields` (typed). At least one log event per error-model code.
+    3. **Traces**: list spans and parent/child relations. Each external call (DB, HTTP, queue) gets a span.
+    4. **Budgets**: front-end performance budgets (LCP ms, CLS, TTFB ms, bundle KB) and back-end budgets (p50/p95/p99 latency ms per endpoint category). Tie each budget to an NFR id.
+    5. Reference error codes from the Error Model by stable id inside log events.
     
-    Plus performance **budgets** (LCP, CLS, TTFB, bundle KB) for the
-    performance-auditor.
+    ## How to think
+    - If an NFR has a number, it gets a metric. If it doesn't, push back on the PRD (numbers later, not here).
+    - Cardinality discipline: never label with user_id; use bucket labels.
+    - Span names must match component names where possible.
+    - Budgets should be tight enough to be informative, loose enough to be achievable.
+    
+    ## Required inputs
+    At least one NFR with a numeric target. If NFRs are absent, STOP — observability without targets is decorative.
+    
+    ## Output format
+    Markdown starting with `## Observability Spec` with four subsections: `### Metrics`, `### Logs`, `### Traces`, `### Budgets`. Tables or bullet lists, fenced JSON for structured field schemas.
+    
+    ## Quality criteria
+    Passes if: every numeric NFR has a metric; every error-model code has a log event; spans cover every external call; budgets per surface and per endpoint category; no high-cardinality labels.
+    Fails if: NFR with no metric; error code with no log; PII in labels; missing budgets; vague levels.
+    
+    ## Common pitfalls
+    - Logging at `info` for things that should be `warn`/`error`.
+    - Histograms without unit declared.
+    - One trace per request and nothing nested — useless.
+    - Budgets copy-pasted from elsewhere without tying to NFR ids.
+    
+    ## Examples
+    Good: `http_request_duration_ms` histogram with labels `[route, status_class]`, target NFR-2 (p95 < 250ms); log event `order.rejected` with `code=ORDER_NOT_FOUND` at `warn`.
+    Bad: counter `errors` with no labels; logs without codes; LCP budget of "fast".
     
     ## Stop condition
+    Section exists with Metrics/Logs/Traces/Budgets subsections; every numeric NFR is observable; every error code is logged; every external boundary is traced; budgets tie to NFR ids.
     
-    Every NFR with a number has a metric that measures it; every error in
-    the error model has a log event.
+    ## Confidence guidance
+    Lower when: NFRs lack numbers (≤0.7), error model incomplete (≤0.75), traces span ambiguous boundaries (≤0.8), budgets unsupported by data (≤0.8). Need ≥0.85.
 
 ### Skill: write-rollout-plan
 
     
     # Skill: write-rollout-plan
     
-    ## Task
+    ## Purpose
+    Specify exactly how the feature reaches production: which flags gate it, how traffic ramps, how to disable instantly, and how schema and API changes stay backwards-compatible. After this section, deploy and rollback are mechanical.
     
-    Document:
+    ## When to invoke
+    Invoke as the final TSD section, after Observability. Do NOT invoke to: write deployment scripts, configure CI/CD, or describe long-term feature deprecation (use a separate sunset plan).
     
-    - Feature flag name(s) + default state.
-    - Canary stages (% traffic, duration, abort criteria).
-    - Kill switch (how to disable instantly).
-    - Backwards compatibility plan (data migration order).
+    ## Procedure (follow exactly)
+    1. **Feature flags**: list every flag with `name` (stable id), `scope` (`global`|`per-tenant`|`per-user`), `default` (`off`), and the FR it gates.
+    2. **Canary stages**: an ordered list, each with `percent_traffic`, `min_duration`, `abort_criteria` (metric thresholds tied to Observability metric names from the Observability Spec).
+    3. **Kill switch**: exact action that disables the feature globally in under 60 seconds. Name the flag or config key used. Document the rollback log message.
+    4. **Backwards compatibility**: for every data migration list `pre-deploy`, `deploy`, `post-deploy` steps; for every API change document the old shape's deprecation timeline. New columns nullable; renames go through dual-write.
+    5. Cross-link every abort_criterion to a metric defined in Observability.
+    
+    ## How to think
+    - If a flag has no kill criterion, it is not a kill switch — it is a wish.
+    - Canary stages must be monotonic in percent_traffic.
+    - Migration order matters: add columns before reading them, write to both before switching reads.
+    - Never delete columns in the same deploy that stops writing them.
+    
+    ## Required inputs
+    `functional_requirements` must be non-empty. Observability Spec must already define the metrics that abort_criteria reference; if not, STOP and write Observability first.
+    
+    ## Output format
+    Markdown starting with `## Rollout Plan`, with four subsections: `### Feature Flags`, `### Canary`, `### Kill Switch`, `### Backwards Compatibility`.
+    
+    ## Quality criteria
+    Passes if: every flag has default off and a gated FR; canary stages have ordered percents with metric-tied abort criteria; kill switch is concrete and fast; every migration step is sequenced.
+    Fails if: flags without kill criteria; vague "monitor and proceed"; missing rollback for any migration; metrics referenced that don't exist in Observability.
+    
+    ## Common pitfalls
+    - Defaulting a flag to `on` "because it's safe".
+    - Using engineer judgement as abort criterion instead of metrics.
+    - Bundling a rename and a delete into one migration.
+    - Forgetting to define a kill switch for risky changes.
+    
+    ## Examples
+    Good: flag `orders.new_pipeline` default off, canary 1%/10%/50%/100% with min_duration 30m and abort if `order_error_rate > 0.5%`; kill switch via LaunchDarkly key set to off; migration adds nullable `new_status` first, dual-write, then cutover.
+    Bad: "we'll ramp gradually"; no metric thresholds; migration drops and recreates table.
     
     ## Stop condition
+    Section exists with Flags/Canary/Kill Switch/Compatibility populated; every flag has a kill criterion; every migration has an ordered, rollback-safe plan; every abort_criterion references a real metric.
     
-    Every flag has a kill criterion; every migration has a rollback plan.
+    ## Confidence guidance
+    Lower when: Observability metrics not finalized (≤0.7), data migration risk high (≤0.75), kill switch depends on infra that isn't in place (≤0.7), per-tenant flagging not supported by platform (≤0.75). Need ≥0.85.
 
 ### Skill: write-tsd-overview
 
     
     # Skill: write-tsd-overview
     
-    ## Task
+    ## Purpose
+    Open the TSD with a one-paragraph technical restatement of the PRD goal, a bullet list of every component touched, and explicit cross-links to PRD goal ids. This anchors every later section to the source of truth.
     
-    Write the TSD overview: 1 paragraph restating the PRD goals in technical
-    terms + a bullet list of components touched + cross-link to PRD section
-    ids.
+    ## When to invoke
+    Invoke as the first TSD section after architecture is complete and PRD is locked. Do NOT invoke to: paraphrase the PRD into user-facing prose, write product positioning, or expand on stack choices (that belongs in Component Contracts).
+    
+    ## Procedure (follow exactly)
+    1. Read the PRD at `prd_path`. Extract every goal id (e.g. `G-1`, `G-2`).
+    2. Write one paragraph (3–6 sentences) restating the goals in engineering terms (latency, throughput, schemas, integrations) — not features.
+    3. Emit a bullet list of components from `architecture.components` with one-line role descriptions; reuse the exact names from the architecture diagram.
+    4. Cross-link every PRD goal id inline: `(see PRD §G-3)`. Every goal must appear at least once.
+    5. Do not invent goals, components, or stack details not present in inputs.
+    
+    ## How to think
+    - The overview is a map, not a sales pitch. Concrete > evocative.
+    - Every component named must appear in the architecture; do not add new ones here.
+    - If the PRD lists a goal you cannot link to a component, STOP — escalate as a gap to product.
+    
+    ## Required inputs
+    `prd_path` must exist and the file must contain at least one goal id. `architecture` must have a non-empty component list and a tech stack. If either is missing, STOP.
+    
+    ## Output format
+    Markdown string starting with `## Overview`, then one paragraph, then `### Components` followed by a bullet list. No code blocks. No preamble outside the section.
+    
+    ## Quality criteria
+    Passes if: every PRD goal id is referenced; every component listed exists in architecture; paragraph is engineering-focused; no marketing language.
+    Fails if: goals omitted; new components invented; paragraph reads like a press release; cross-links use prose instead of ids.
+    
+    ## Common pitfalls
+    - Restating the PRD almost verbatim instead of translating to technical terms.
+    - Listing components in a different order than the architecture diagram.
+    - Hyping the stack (`a modern, scalable…`); cut adjectives.
+    - Forgetting goals that don't fit cleanly; every one must be linked.
+    
+    ## Examples
+    Good: "The system exposes a REST API (G-1) backed by Postgres, processes uploads asynchronously via a worker (G-3), and emits webhooks under 500ms p99 (G-2). Components: api, worker, db, webhook-dispatcher."
+    Bad: "We're building an exciting new platform that empowers users…" (no ids, marketing tone).
     
     ## Stop condition
+    Section markdown exists, starts with `## Overview`, references every PRD goal id by code, lists every architecture component, and contains no invented elements.
     
-    Every PRD goal is referenced by id; every component named appears in the
-    architecture doc.
+    ## Confidence guidance
+    Lower when: PRD goals lack ids (≤0.7 — author must infer), architecture components don't cover every goal (≤0.7), tech stack ambiguous (≤0.8). Need ≥0.85.
 
 ## Commands
 

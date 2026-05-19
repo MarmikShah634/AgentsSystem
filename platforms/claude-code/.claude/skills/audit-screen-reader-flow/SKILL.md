@@ -3,20 +3,107 @@ id: audit-screen-reader-flow
 category: a11y
 owner_agent: accessibility-auditor
 inputs:
-  - target_path
+  - target_path: "absolute path to the page or component"
 outputs:
-  - findings
+  - findings: "list of {wcag, severity, path, msg, fix}"
+  - verdict: "pass|block"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.95
 ---
 
 # Skill: audit-screen-reader-flow
 
-## Task
+## Purpose
+Validate that screen reader users receive a coherent linear narration
+of the page: correct heading hierarchy, landmarks, live regions, and
+hidden-from-AT decoration. WCAG 2.2 1.3.1 (Info and Relationships) and
+4.1.3 (Status Messages). Findings only.
 
-WCAG 2.2 1.3.1/4.1.3. Validate semantic structure:
+## When to invoke
+Plan step requests a11y audit AND target is a full page or a
+component large enough to define its own structure (e.g. a modal
+with header/body/footer).
+Do NOT invoke for: leaf components without semantic structure (e.g.
+a single icon).
 
-- One `<h1>` per page; heading hierarchy unbroken.
-- Landmarks present: `<main>`, `<nav>`, `<header>`, `<footer>`.
-- Dynamic regions use `aria-live`.
-- Decorative elements set `aria-hidden="true"`.
+## Procedure (follow exactly)
+1. Heading hierarchy:
+   - Exactly one `<h1>` per page (zero is also a finding).
+   - No level skipped downward (h2 → h4 = error). Upward jumps OK.
+2. Landmarks required on full pages: `<main>` (exactly one),
+   `<nav>`, `<header>`, `<footer>`. `<aside>` only if used as
+   complementary content.
+3. Dynamic regions:
+   - Status messages (success/error toasts) MUST use
+     `role="status"` or `aria-live="polite"`.
+   - Errors needing immediate attention: `aria-live="assertive"`
+     (use sparingly).
+4. Decorative elements MUST set `aria-hidden="true"` (icons,
+   spacers, redundant SVG).
+5. Reading order: DOM order must match visual order. Flag CSS
+   ordering (`order:`, `flex-direction: row-reverse`,
+   `grid-area`) that diverges.
+6. Tables: data tables need `<th scope>`; layout tables need
+   `role="presentation"`.
+
+## How to think
+- Sectioning content reset rules (HTML5 outline) are de-facto not
+  supported in AT; rely on explicit `<h1>`–`<h6>`.
+- `aria-live` regions must exist in the DOM before content is
+  inserted; injecting both at once is silent.
+- `role="alert"` is implicitly assertive — do not combine with
+  conflicting `aria-live`.
+- A skip-link to `#main` requires `<main id="main" tabindex="-1">`.
+
+## Required inputs
+Inspectable markup at `target_path`.
+
+## Output format
+```json
+{"findings": [
+   {"wcag": "1.3.1", "severity": "error",
+    "path": "Dashboard.tsx",
+    "msg": "Heading jumps h2 → h4",
+    "fix": "Demote stray h4 to h3 or insert intervening h3."}],
+ "verdict": "block", "confidence": 0.96}
+```
+
+## Quality criteria
+Pass: full sweep of headings + landmarks + live regions + decorative
+hide rules; each finding cites a specific element; verdict reflects
+severity.
+Fail: spot-checking, accepting multiple `<h1>`, missing live-region
+absence on a toast component.
+
+## Common pitfalls
+- Treating `<section>` as a landmark (it is not unless named).
+- Forgetting `aria-hidden` on icon inside an already-labelled
+  button (the icon then duplicates the name).
+- Using `aria-live="assertive"` for non-urgent updates.
+- DOM order differing from visual via `flex-direction: reverse`.
+
+## Examples
+Pass:
+```html
+<main>
+  <h1>Dashboard</h1>
+  <section aria-labelledby="recent"><h2 id="recent">Recent</h2></section>
+  <div role="status" aria-live="polite" id="toast"></div>
+</main>
+```
+Fail:
+```html
+<h1>App</h1><h1>Page</h1>   <!-- two h1 -->
+<h2>One</h2><h4>Three</h4>  <!-- skipped h3 -->
+```
+
+## Stop condition
+All structural rules checked; findings emitted; verdict set; no
+source modified.
+
+## Confidence guidance
+Static markup fully traversed = 0.97; client-rendered structure
+partially traced ≤0.92; dynamic live regions inferred from code only
+≤0.88. Must be ≥0.95 to emit.

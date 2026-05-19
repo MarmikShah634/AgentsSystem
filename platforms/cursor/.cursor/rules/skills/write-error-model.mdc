@@ -8,25 +8,62 @@ id: write-error-model
 category: tsd
 owner_agent: tech-spec-author
 inputs:
-  - functional_requirements
+  - functional_requirements: "FRs from the PRD; each implies failure paths that must be enumerated"
 outputs:
-  - section
+  - section: "Markdown for the TSD Error Model section; one row per error class"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: write-error-model
 
-## Task
+## Purpose
+Enumerate every distinct error class the system can produce, with a stable code, HTTP status (when applicable), user-facing message, the conditions under which it is raised, and a recovery path. The error model is the single source of truth referenced by API Contracts, Component Contracts, and Observability.
 
-A taxonomy of all error classes with:
+## When to invoke
+Invoke after Component Contracts and before/alongside API Contracts so APIs can reference codes. Do NOT invoke to: catalog third-party library exceptions verbatim (translate to our codes), or add ad-hoc errors for one endpoint (extend the model instead).
 
-- Code (stable identifier, e.g. `AUTH_EXPIRED`).
-- HTTP status (where applicable).
-- User-facing message (or null if internal).
-- When raised.
-- Recovery path (retry / refresh / give up).
+## Procedure (follow exactly)
+1. Walk Component Contracts and FRs; collect every failure path mentioned.
+2. For each distinct failure, emit a row with: `code`, `http_status` (or `null`), `user_message` (or `null` if internal), `when_raised`, `recovery`.
+3. Codes use `SCREAMING_SNAKE_CASE`, stable, namespaced when useful (e.g. `AUTH_EXPIRED`, `ORDER_NOT_FOUND`).
+4. Recovery is one of: `retry`, `refresh-token`, `client-fix-input`, `escalate`, `give-up`. Pick exactly one.
+5. Group errors into subsections by domain (Auth, Validation, Business, Infrastructure) when there are ≥10 codes.
+6. No duplicate codes. No two codes describing the same failure.
+
+## How to think
+- If a failure has identical recovery and identical user impact as an existing code, merge them.
+- Internal-only errors (worker crashes, DB timeouts) still need codes for logs/metrics, with `user_message: null`.
+- HTTP status is for HTTP-surfaced errors; CLI/worker codes leave it null.
+- Wording the user message: actionable and short, no stack traces.
+
+## Required inputs
+`functional_requirements` must be non-empty. If component contracts are not yet written, the model can still be drafted but mark `confidence ≤ 0.8` because forward-ref risk is high.
+
+## Output format
+Markdown starting with `## Error Model`, then a table or bullet list with the five fields per code. Example row format:
+```
+- AUTH_EXPIRED — 401 — "Please sign in again." — when bearer token's `exp` claim < now — refresh-token
+```
+
+## Quality criteria
+Passes if: every code unique; every code has all five fields; every API Contracts non-2xx references a code that exists here; recovery is one of the allowed verbs.
+Fails if: duplicate codes; missing field; free-form recovery prose; user_message exposing internals.
+
+## Common pitfalls
+- Leaking exception class names (`SQLAlchemyError`) into codes.
+- Vague recovery (`"handle it"`).
+- Mixing user-facing and internal entries without marking which is which.
+- Adding codes that no contract references.
+
+## Examples
+Good: `ORDER_NOT_FOUND — 404 — "Order not found." — when GET /orders/{id} resolves to no row — client-fix-input`.
+Bad: `Error1 — 500 — null — sometimes — handle`.
 
 ## Stop condition
+Section exists, every code is unique with all five fields populated, every API and component-contract failure resolves to a code here, recovery verbs are from the closed set, and grouping is applied if ≥10 codes.
 
-Every error has all five fields; no duplicate codes.
+## Confidence guidance
+Lower when: component contracts not yet finalized (≤0.8), recovery semantics unclear for some failures (≤0.75), user_message wording requires product approval (≤0.8), >25 codes (≤0.8 — duplication risk). Need ≥0.85.

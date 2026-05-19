@@ -8,24 +8,80 @@ id: write-problem-statement
 category: prd
 owner_agent: prd-author
 inputs:
-  - stakeholder_input
+  - stakeholder_input: "free-form notes describing who suffers what, why, and the harm"
 outputs:
-  - section
+  - section: "markdown for the Problem Statement section (single sentence, four slots filled)"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: write-problem-statement
 
-## Task
+## Purpose
+State the problem in exactly one sentence using a fixed four-slot template, with zero solution language. This anchors every downstream goal, FR, and metric to a concrete pain.
 
-State the problem in the form:
+## When to invoke
+Invoke as PRD section 2, after stakeholder input is gathered and ideally before goals are drafted (goals reference the harm).
 
-> Today, **\<users\>** struggle to **\<job\>** because **\<root cause\>**.
-> This results in **\<measurable harm\>**.
+Do NOT invoke to: enumerate goals (use write-goals-and-non-goals), describe users (use write-user-personas), or propose a solution (no skill should; solutions belong in TSD/design).
 
-One sentence. No solution language.
+## Procedure (follow exactly)
+1. Read `stakeholder_input`.
+2. Extract four slots:
+   a. `<users>` — concrete role label (not "users").
+   b. `<job>` — the user's job-to-be-done.
+   c. `<root cause>` — why today's environment blocks that job.
+   d. `<measurable harm>` — quantifiable consequence (time lost, errors, churn, revenue).
+3. Compose exactly one sentence in this form:
+   `Today, <users> struggle to <job> because <root cause>. This results in <measurable harm>.`
+4. Strip any solution wording ("we will build", "the app", feature names).
+5. If any slot is empty in stakeholder_input, STOP and lower confidence; record an HTML comment naming the empty slot. Do NOT invent numbers.
+
+## How to think
+- Tempted to write "users want X" -> reframe as "users struggle to do Y because Z".
+- Harm is qualitative -> push for a number; if none exists, flag and keep qualitative with a note.
+- Root cause looks like a missing feature -> step back; the root cause is the real-world condition, not the absence of your product.
+- Multiple user roles in pain -> pick the primary one; secondaries belong in personas, not here.
+
+## Required inputs
+`stakeholder_input` non-empty. If missing, STOP and ask human. If it only describes a solution with no pain, STOP and route back to discovery.
+
+## Output format
+{
+  "section": "## Problem Statement\n\nToday, <users> struggle to <job> because <root cause>. This results in <measurable harm>.\n",
+  "confidence": 0.0
+}
+
+## Quality criteria
+Passes if: header is `## Problem Statement`; exactly one sentence with both clauses; all four slots filled with concrete content (or explicitly commented as gaps); no solution language.
+Fails if: more than one sentence (other than the harm clause); slot uses generic "users"; mentions a product, feature, or technology; harm slot is purely subjective without a flag.
+
+## Common pitfalls
+- "Users don't have a way to X" — that's a missing feature, not a problem.
+- Listing multiple problems separated by commas.
+- Hiding the root cause inside the harm slot.
+- Using marketing tone ("frustrating user experience").
+
+## Examples
+Good:
+## Problem Statement
+
+Today, K-8 math teachers struggle to give weekly mastery checks because the only tools available are paper quizzes or generic LMS forms that don't compute mastery. This results in roughly 4 hours per teacher per week spent on manual grading and spreadsheet reconciliation.
+
+Bad:
+## Problem Statement
+
+Users want a better quiz app with more features. (no slots filled, solution-flavored, no harm)
 
 ## Stop condition
+Single sentence (plus harm clause) under `## Problem Statement`; four slots concretely filled or gap-commented; no solution language; confidence reported.
 
-Output contains all four `<...>` slots filled with concrete content.
+## Confidence guidance
+Lower confidence when:
+- Harm has no number in stakeholder_input -> <= 0.75
+- Root cause is inferred rather than stated -> <= 0.7
+- Multiple plausible primary user roles -> <= 0.7
+- Stakeholder input mixes solution and problem -> <= 0.7
+Confidence >= 0.85 is required to proceed without human review.

@@ -8,28 +8,71 @@ id: enforce-interaction-states
 category: design
 owner_agent: designer
 inputs:
-  - target_path
+  - target_path: "absolute path to a component or page that contains interactive elements"
 outputs:
-  - findings
+  - findings: "array of {area, severity, path, line, component, missing_state, msg, fix}"
+  - verdict: "'pass' | 'revise'"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: enforce-interaction-states
 
-## Task
+## Purpose
+Every interactive surface must ship four states: loading, empty, error, and tactile feedback. This skill flags any missing state per component so the frontend agent fills them in.
 
-Every interactive surface must ship four states. Flag any missing.
+## When to invoke
+Invoke when `target_path` contains interactive elements (buttons, forms, lists fed by async data, navigation).
+Do NOT invoke to: audit motion (use tune-motion-physics), copy of error messages (use critique-ui-copy), or color of focus rings (use pick-color-palette-oklch).
 
-## Required states
+## Procedure (follow exactly)
+1. Enumerate interactive components in the file: anything that triggers async data, renders a list/grid, accepts user input, or is `<button>`/`<a>`/`role="button"`.
+2. For each component, verify presence of:
+   - **Loading** state: skeleton, spinner, or progress indicator while data is pending.
+   - **Empty** state: meaningful copy + a next action; never a blank container.
+   - **Error** state: human-readable message AND a retry/recover affordance.
+   - **Tactile feedback**: distinguishable `:hover`, `:focus-visible`, and `:active` styles for the primary action; pressed-state micro-animation for buttons.
+3. Flag (severity=error) each missing state per component.
+4. Findings include `component` identifier (selector or filename anchor), `missing_state` enum value, `path`, `line`, `msg`, and a concrete `fix`.
+5. `verdict = "pass"` iff every interactive component has all four states.
 
-1. **Loading** — skeleton, spinner, or progress.
-2. **Empty** — meaningful empty state with a next action, never blank.
-3. **Error** — user-readable message + a retry/recover affordance.
-4. **Tactile feedback** — `:hover`, `:focus-visible`, `:active`
-   distinguishable styles + pressed-state animation for buttons.
+## How to think
+- Component renders static content (no async, no input) → only tactile feedback applies; skip loading/empty/error.
+- List has empty state but it is just `null` or blank → does not count; flag.
+- Error state shows the raw stack trace → counts as missing user-readable message; flag.
+- Focus ring is the browser default → not distinguishable; flag tactile.
+
+## Required inputs
+`target_path` non-empty and contains interactive elements. No interactives → STOP with note "nothing to audit".
+
+## Output format
+```json
+{"findings":[
+  {"area":"states","severity":"error","path":"src/Inbox.tsx","line":71,
+   "component":"<MessageList>","missing_state":"empty",
+   "msg":"MessageList renders nothing when data is [].",
+   "fix":"render `EmptyState` with copy 'No messages yet' and a 'Compose' CTA."}],
+ "verdict":"revise","confidence":0.0}
+```
+
+## Quality criteria
+Passes if: every interactive component evaluated for all 4 states; each finding names the missing state and offers a concrete fix; verdict respects error presence.
+Fails if: missed an interactive component; lumped loading and empty together; "needs an empty state" with no copy or action proposed; verdict pass with missing states.
+
+## Common pitfalls
+- Accepting `disabled` styling as `:active` feedback.
+- Treating a toast as a sufficient error state when the affected component is silent.
+- Confusing skeleton with shimmer-only placeholders (no shape).
+- Skipping `:focus-visible` audit because mouse use looks fine.
+
+## Examples
+✅ Finding: error, missing_state="error", component="<PaymentForm>", fix "show inline alert with retry button on 5xx response".
+❌ Anti-pattern: "improve interaction states" with no component name, no missing-state enum, no fix copy.
 
 ## Stop condition
+Every interactive component evaluated against the four states; findings cite component+state+path+line+fix; verdict matches.
 
-Findings name the missing state and the file/line of the affected
-component.
+## Confidence guidance
+Lower when: state logic lives outside the file (≤0.75), async data flow unclear (≤0.7), heavy use of suspense/streaming (≤0.8). ≥0.85 required.

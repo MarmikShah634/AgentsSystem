@@ -18,7 +18,7 @@ owns:
   - skills/prd/assemble-prd
 hands_off_to:
   - prd-reviewer
-confidence_floor: 0.90
+confidence_floor: 0.85
 sensitive_surfaces: []
 ---
 

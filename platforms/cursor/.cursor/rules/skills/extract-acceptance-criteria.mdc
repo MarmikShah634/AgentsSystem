@@ -8,20 +8,83 @@ id: extract-acceptance-criteria
 category: requirements
 owner_agent: requirements
 inputs:
-  - user_stories
+  - user_stories: "list of {id, role, capability, value} from gather-user-stories"
 outputs:
-  - acceptance_criteria
+  - acceptance_criteria: "list of {story_id, ac_id, given, when, then} entries covering happy + edge paths"
+  - confidence: "float in [0,1]"
 requires_plan: false
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: extract-acceptance-criteria
 
-## Task
+## Purpose
+For each user story, author 1..N Given/When/Then acceptance criteria that pin down observable behavior. Every story must have at least one happy-path AC and at least one edge-case AC. ACs are the contract downstream test authors use; sloppy ACs cause hallucinated tests.
 
-For each user story, write 1..N Given/When/Then acceptance criteria.
+## When to invoke
+Invoke after `gather-user-stories` has produced a clean story list AND before `validate-requirements`. Invoke once per requirements pass.
+
+Do NOT invoke to: rewrite stories (use gather-user-stories), enumerate NFRs (use write-non-functional-requirements), or design tests (that is the test-author skill).
+
+## Procedure (follow exactly)
+1. Read every story. If `user_stories` is empty, STOP and ask human.
+2. For each story, list candidate behaviors:
+   a. The happy path (success).
+   b. At least one edge case: empty input, unauthenticated user, missing prerequisite, boundary value, conflict, or permission denial. Choose whichever applies; if none applies, record an open question.
+3. For each behavior, write one AC as: `Given <precondition>, When <action>, Then <observable result>`.
+   a. `Given` describes state — never actions.
+   b. `When` describes exactly one action by the role from the story.
+   c. `Then` describes an observable outcome (UI text, status code, record state visible to the role).
+4. Assign ids `AC-<story_id>-<n>` (e.g. `AC-US-1-1`).
+5. Reject any AC whose `Then` clause is not observable from outside the system.
+
+## How to think
+- Cannot identify any edge case → do NOT invent one; record an open question and lower confidence.
+- AC needs two actions → split into two ACs; chained `When ... and ...` is forbidden.
+- Outcome is internal ("the cache is warmed") → rewrite to the external symptom or drop.
+- Multiple roles in one AC → that signals a missing story; flag, don't merge.
+- Ambiguous precondition ("user is logged in") → make it specific ("user is authenticated with role=teacher").
+
+## Required inputs
+`user_stories` must be a non-empty list of well-formed stories. If any story is missing role/capability/value, STOP and route back to gather-user-stories.
+
+## Output format
+{
+  "acceptance_criteria": [
+    {"story_id": "US-1", "ac_id": "AC-US-1-1", "given": "string", "when": "string", "then": "string", "kind": "happy|edge"}
+  ],
+  "confidence": 0.0
+}
+
+## Quality criteria
+Passes if: every story has >=1 happy AC and >=1 edge AC; every `Then` is observable; no compound `When`; ids are sequential per story.
+Fails if: any story has zero ACs; `Then` references internal state with no external symptom; `When` chains actions; invented preconditions not implied by the story.
+
+## Common pitfalls
+- Edge case copy-pasted across stories without reflecting story specifics.
+- Using "should" instead of an observable outcome.
+- Treating absence of a thing as the test (test the symptom of absence instead).
+- Bundling validation rules into one AC instead of one per rule.
+
+## Examples
+Story: As a teacher, I want to assign a weekly quiz, so that students practice on a schedule.
+
+Good:
+- AC-US-1-1 (happy): Given the teacher is signed in and owns class C, When they assign quiz Q to class C with due date D, Then quiz Q appears in every student's queue with due date D.
+- AC-US-1-2 (edge): Given the teacher is signed in but does not own class C, When they attempt to assign quiz Q to class C, Then the system returns a permission-denied error and no student queue changes.
+
+Bad:
+- Given a teacher, When they assign a quiz, Then it works. (vague Then)
+- Given a teacher, When they assign a quiz and grade it, Then both succeed. (compound When)
 
 ## Stop condition
+Every story has >=1 happy AC and >=1 edge AC; every AC has observable Then; ids assigned; confidence reported.
 
-Every story has at least one G/W/T entry covering the happy path AND at
-least one edge case (empty input, auth failure, etc.).
+## Confidence guidance
+Lower confidence when:
+- A story has no obvious edge case in domain -> <= 0.7
+- Observable outcome unclear from story alone -> <= 0.75
+- Story value clause was empty (cascaded uncertainty) -> <= 0.7
+- More than one plausible interpretation of capability -> <= 0.7
+Confidence >= 0.85 is required to proceed without human review.

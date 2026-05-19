@@ -10,7 +10,7 @@ owns:
   - skills/testing/*
 hands_off_to:
   - reviewer
-confidence_floor: 0.90
+confidence_floor: 0.85
 sensitive_surfaces: []
 ---
 

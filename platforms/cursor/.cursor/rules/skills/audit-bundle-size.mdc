@@ -8,19 +8,94 @@ id: audit-bundle-size
 category: perf
 owner_agent: performance-auditor
 inputs:
-  - build_output
-  - budget_kb
+  - build_output: "path to dist/ or build stats (webpack stats.json, vite manifest)"
+  - budget_kb: "object {js: int, css: int}; defaults js=250, css=50 (gzip)"
 outputs:
-  - findings
+  - findings: "list of {metric, measured, budget, severity, path, fix}"
+  - verdict: "pass|block"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.95
 ---
 
 # Skill: audit-bundle-size
 
-## Task
+## Purpose
+Measure gzipped initial-load bundle sizes from the supplied build
+output and compare to budgets. Findings only — never modify code.
+Anti-hallucination: read real file sizes / stats; never estimate from
+source LOC.
 
-Measure gzipped bundle size from the build output (Vite/webpack stats,
-`dist/` size, etc.). Compare to `budget_kb` (default 250 for initial
-JS, 50 for initial CSS). Flag every entry-chunk over budget with the
-top contributors.
+## When to invoke
+Plan step requests perf audit AND build output exists AND entry
+chunks are identifiable.
+Do NOT invoke for: dev-mode bundles (unminified), server-only code,
+or build artefacts older than the latest commit.
+
+## Procedure (follow exactly)
+1. Identify the source of truth:
+   - Webpack: `stats.json` (use `assets[].size` + `gzip` if present
+     or compute via gzip of file).
+   - Vite/Rollup: `dist/.vite/manifest.json` + actual gzipped file
+     sizes on disk.
+   - Plain `dist/`: gzip each entry file (`gzip -c file | wc -c`).
+2. Determine entry chunks (initial load only) — follow manifest
+   `entry: true` or HTML `<script src>` references.
+3. For each entry chunk:
+   - Measure gzipped bytes.
+   - Compare to `budget_kb.js` for `.js` and `budget_kb.css` for
+     `.css`. Defaults: 250 KB JS, 50 KB CSS.
+4. For every over-budget chunk emit a finding including: measured KB,
+   budget, top 3 modules contributing (from stats), suggested fix
+   (code-split, dynamic import, tree-shake, replace dep).
+5. Report total initial transfer size as well.
+
+## How to think
+- Vendor chunk vs app chunk — budget applies to the sum on initial
+  load.
+- Async chunks (route-split) are NOT counted against initial budget;
+  list them informationally.
+- Source maps must be excluded from measurement.
+- If stats lack module breakdown, lower confidence and flag without
+  fix detail.
+
+## Required inputs
+Build output present and readable. Budgets defaulted if absent.
+
+## Output format
+```json
+{"findings": [
+   {"metric": "initial_js_gzip", "measured": 412, "budget": 250,
+    "severity": "error", "path": "dist/assets/index-abc.js",
+    "fix": "Code-split routes via dynamic import; remove moment (-60KB)."}],
+ "verdict": "block", "confidence": 0.96}
+```
+
+## Quality criteria
+Pass: every entry chunk measured; gzip used (not raw); budget applied
+per asset type; verdict matches; top contributors named when stats
+available.
+Fail: comparing raw bytes to gzip budget; counting async chunks as
+initial; estimating sizes from source.
+
+## Common pitfalls
+- Reporting brotli when budget is gzip.
+- Including `.map` files in totals.
+- Treating CSS as JS or vice versa.
+- Missing the second/third entry in multi-entry apps.
+
+## Examples
+Pass: webpack-bundle-analyzer JSON parsed, main chunk 218 KB gzip,
+verdict `pass`.
+Fail: Vite app, main chunk 412 KB gzip (budget 250) → finding emitted
+with fix proposing route-level dynamic import.
+
+## Stop condition
+Every entry chunk measured and compared; findings emitted with sizes
+and fixes; verdict set; no source modified.
+
+## Confidence guidance
+Stats with gzip + module breakdown = 0.97; gzip computed manually
+≤0.93; only raw sizes available ≤0.88; estimates ≤0.7. Must be
+≥0.95 to emit.

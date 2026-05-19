@@ -3,16 +3,90 @@ id: analyze-coverage
 category: testing
 owner_agent: tester
 inputs:
-  - coverage_report_path
+  - coverage_report_path: "absolute path to lcov.info|coverage.json|cobertura.xml"
+  - threshold_pct: "minimum acceptable line coverage, default 70"
 outputs:
-  - coverage_summary
+  - coverage_summary: "{overall_pct, per_file:[{path, lines_pct, branches_pct, status}]}"
+  - needs_attention: "list of file paths below threshold"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: analyze-coverage
 
-## Task
+## Purpose
+Parse the supplied coverage report and emit a per-file summary,
+flagging files below `threshold_pct` as `needs_attention`.
+Anti-hallucination: never estimate coverage from source — only parse
+the actual report.
 
-Parse the coverage report (lcov/coverage.json/etc.) and emit per-file
-line/branch coverage. Flag any file below 70% as `needs_attention`.
+## When to invoke
+Plan step requests coverage analysis AND a coverage report exists at
+`coverage_report_path` AND the report format is recognised.
+Do NOT invoke when: report is missing, stale (older than the last
+test run), or in a proprietary format without a parser.
+
+## Procedure (follow exactly)
+1. Detect format from extension/contents:
+   - `lcov.info` → LCOV records (TN/SF/DA/BRDA/end_of_record).
+   - `coverage.json` → Istanbul JSON (`statementMap`, `s`, `b`).
+   - `cobertura.xml` / `coverage.xml` → Cobertura XML.
+   - `coverage.out` → Go cover profile.
+2. For each file, compute `lines_pct = covered_lines/total_lines*100`
+   and `branches_pct` when available.
+3. Compute overall: weighted by total lines, not arithmetic mean.
+4. Mark each file `status: "ok"` if `lines_pct >= threshold_pct` else
+   `"needs_attention"`.
+5. Sort `needs_attention` ascending by coverage.
+
+## How to think
+- Generated files (e.g. `*.pb.go`, `dist/`) → exclude before
+  reporting; document the exclusion list.
+- Test files themselves → exclude from coverage report consumption.
+- Branch coverage missing → report lines only, lower confidence to
+  ≤0.8.
+- Threshold not supplied → default 70; never invent a higher bar.
+
+## Required inputs
+`coverage_report_path` must exist and parse. Threshold is optional.
+
+## Output format
+```json
+{"coverage_summary": {
+   "overall_pct": 82.4,
+   "per_file": [
+     {"path": "src/a.py", "lines_pct": 91.0, "branches_pct": 78.0, "status": "ok"},
+     {"path": "src/b.py", "lines_pct": 54.0, "branches_pct": 40.0, "status": "needs_attention"}
+   ]},
+ "needs_attention": ["src/b.py"],
+ "confidence": 0.95}
+```
+
+## Quality criteria
+Pass: every file in the report appears in `per_file`; overall is
+line-weighted; threshold honoured; sort order correct.
+Fail: averaging file percentages naively; silently dropping files;
+fabricating branch numbers when source format omits them.
+
+## Common pitfalls
+- Treating LCOV `LF`/`LH` as branches.
+- Mixing istanbul `s` (statements) with line coverage and reporting
+  as lines without conversion.
+- Ignoring `BRF`/`BRH` and inventing branch percentages.
+- Counting `node_modules/` or `vendor/` paths.
+
+## Examples
+Pass: LCOV input parsed, 124 files, overall 82.4%, three files flagged.
+Fail: outputting "overall 85%" when the report shows 70% because the
+parser ignored a large untested file.
+
+## Stop condition
+Report parsed; per-file and overall figures emitted; needs_attention
+list complete; no source files modified.
+
+## Confidence guidance
+Format recognised + branches present = 0.95; lines only ≤0.85;
+partial parse (warnings emitted) ≤0.75; format guessed ≤0.6. Must be
+≥0.85 to emit.

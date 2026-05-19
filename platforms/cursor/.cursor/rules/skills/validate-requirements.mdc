@@ -8,24 +8,84 @@ id: validate-requirements
 category: requirements
 owner_agent: requirements
 inputs:
-  - user_stories
-  - acceptance_criteria
+  - user_stories: "list of stories from gather-user-stories"
+  - acceptance_criteria: "list of ACs from extract-acceptance-criteria"
 outputs:
-  - validation_report
+  - validation_report: "{issues: [{story_id, ac_id?, kind, msg, fix}], verdict: 'pass'|'revise'}"
+  - confidence: "float in [0,1]"
 requires_plan: false
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: validate-requirements
 
-## Task
+## Purpose
+Audit the (stories, ACs) bundle for completeness, testability, and internal non-contradiction. Emit a structured report; never rewrite the inputs. This gate prevents bad requirements from poisoning the PRD.
 
-Check the requirements doc for: completeness (every story has criteria),
-testability (every criterion is observable), and non-contradiction.
+## When to invoke
+Invoke after `extract-acceptance-criteria` and before any PRD section is drafted. Re-invoke after the requirements author addresses issues.
 
-## Output
+Do NOT invoke to: fix issues (you only report), score readiness (use score-prd-readiness for PRDs), or check PRD-level concerns (use the check-prd-* skills).
 
-```json
-{ "issues": [{"story_id": "...", "kind": "...", "msg": "..."}],
-  "verdict": "pass|revise" }
-```
+## Procedure (follow exactly)
+1. Completeness pass:
+   a. For each story, confirm at least one happy AC and at least one edge AC exist. Missing -> issue kind `missing-ac`.
+   b. For each story, confirm role, capability, value slots are non-empty. Missing -> issue kind `incomplete-story`.
+2. Testability pass:
+   a. For each AC, check `Then` is observable (UI symptom, status code, persisted record visible to the role). Internal-only -> kind `untestable`.
+   b. Check `When` is a single action. Compound -> kind `compound-when`.
+   c. Check `Given` describes state not actions. Action in Given -> kind `bad-given`.
+3. Non-contradiction pass:
+   a. Compare ACs across stories. If two ACs assert opposite outcomes for the same preconditions+action, kind `conflicting`.
+   b. If a story's value clause contradicts another story's value -> kind `value-conflict`.
+4. For each issue, propose a concrete `fix` (1 sentence).
+5. Verdict = `pass` iff zero issues. Otherwise `revise`.
+
+## How to think
+- Unsure whether an outcome is observable -> assume not observable and flag; let the author defend it.
+- Two ACs that look similar but differ in wording -> only flag conflict if outcomes truly oppose. Subtle wording differences are not conflicts.
+- A story with no edge AC where domain offers no obvious edge -> still flag `missing-ac`; the author should record the open question instead.
+- Do NOT invent stories or ACs. Do NOT rewrite. Only report.
+
+## Required inputs
+Both `user_stories` and `acceptance_criteria` must be non-empty lists. If either is missing, STOP and route back upstream.
+
+## Output format
+{
+  "validation_report": {
+    "issues": [
+      {"story_id": "US-1", "ac_id": "AC-US-1-2", "kind": "missing-ac|incomplete-story|untestable|compound-when|bad-given|conflicting|value-conflict", "msg": "string", "fix": "string"}
+    ],
+    "verdict": "pass|revise"
+  },
+  "confidence": 0.0
+}
+
+## Quality criteria
+Passes if: every story examined; every AC examined; issue kinds drawn only from the allowed enum; every issue has both `msg` and `fix`; verdict matches issue count.
+Fails if: report omits stories; rewrites instead of reports; issue kinds invented; verdict says `pass` while issues are non-empty.
+
+## Common pitfalls
+- Treating stylistic differences as conflicts.
+- Marking an AC `untestable` only because it lacks a status code (UI symptoms count).
+- Forgetting to check value-clause conflicts across stories.
+- Producing prose findings instead of structured issues.
+
+## Examples
+Good issue:
+{"story_id": "US-2", "ac_id": "AC-US-2-1", "kind": "untestable", "msg": "Then 'the system feels responsive' is subjective", "fix": "Replace with 'page renders within 200ms p95'"}
+
+Bad issue (rewrites instead of reports):
+{"story_id": "US-2", "ac_id": "AC-US-2-1", "kind": "fixed", "msg": "I rewrote it for you", "fix": "..."}
+
+## Stop condition
+Every story and AC examined; issues structured per schema; verdict consistent with issues; confidence reported.
+
+## Confidence guidance
+Lower confidence when:
+- Domain is unfamiliar and observability calls are judgment-heavy -> <= 0.75
+- Many ACs use borderline-subjective language -> <= 0.7
+- Stories were already flagged incomplete upstream -> <= 0.7
+- Conflicts depend on assumed preconditions not stated -> <= 0.65
+Confidence >= 0.85 is required to proceed without human review.

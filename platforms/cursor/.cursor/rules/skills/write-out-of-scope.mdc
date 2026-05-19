@@ -8,22 +8,83 @@ id: write-out-of-scope
 category: prd
 owner_agent: prd-author
 inputs:
-  - goals
-  - non_goals
+  - goals: "markdown of the Goals subsection"
+  - non_goals: "markdown of the Non-Goals subsection"
 outputs:
-  - section
+  - section: "markdown for the Out of Scope section, >=3 items each with rationale"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: write-out-of-scope
 
-## Task
+## Purpose
+Enumerate explicit out-of-scope items reviewers might otherwise assume are in scope. Each item has a one-line rationale. This section reduces post-launch surprise and prevents implicit scope creep during build.
 
-Enumerate explicit out-of-scope items reviewers might assume are in
-scope. Each item has a one-line rationale ("deferred to vNext", "covered
-by feature X", "not legal yet").
+## When to invoke
+Invoke as PRD section 8, after Goals and Non-Goals are drafted. Use those as the springboard for adjacent items.
+
+Do NOT invoke to: replace Non-Goals (Non-Goals are adjacent outcomes; Out of Scope is adjacent features/capabilities/integrations), or to list future roadmap (use a separate roadmap doc).
+
+## Procedure (follow exactly)
+1. Parse `goals` and `non_goals`. Build a mental list of capabilities reviewers might infer.
+2. For each plausible inferred capability NOT covered by goals or non-goals, add an entry:
+   `- <item>: <rationale>`
+   where rationale is one of: "deferred to vNext", "covered by feature/product X", "not legal yet", "explicit founder decision", "blocked on dependency Y".
+3. Provide at least 3 items. Fewer signals you haven't probed adjacencies enough.
+4. Cross-check: no item duplicates a non-goal verbatim; no item contradicts a goal.
+5. Order items roughly by likelihood of confusion (most-assumed first).
+
+## How to think
+- An item is plausible only if a reviewer might assume it -> if no reviewer would assume it (e.g. "we won't build a CRM"), drop.
+- Tempted to overlap with Non-Goals -> Non-Goals are outcomes; Out of Scope is features, integrations, platforms, audiences. Keep the distinction.
+- Rationale is "we don't want to" -> not enough; name the reason (timing, legality, dependency, strategy).
+- An item could plausibly be in scope but is unconfirmed -> mark as open question instead, don't park silently.
+
+## Required inputs
+Both `goals` and `non_goals` non-empty markdown. If either is missing, STOP and route back upstream.
+
+## Output format
+{
+  "section": "## Out of Scope\n\n- <item>: <rationale>\n- <item>: <rationale>\n- <item>: <rationale>\n",
+  "confidence": 0.0
+}
+
+## Quality criteria
+Passes if: >=3 items; each has a concrete rationale from the allowed shape; no duplicates of non-goals; no contradictions with goals; ordered by likelihood of reviewer confusion.
+Fails if: <3 items; rationale missing or vague ("we don't want to"); duplicates non-goals verbatim; strawman items.
+
+## Common pitfalls
+- Listing internal todos ("we will refactor later") — that's engineering work, not scope.
+- Listing things outside the product domain ("we will not build a spaceship").
+- Pasting non-goals here.
+- Omitting integrations users commonly assume (SSO, Google Classroom export, mobile app).
+
+## Examples
+Good:
+## Out of Scope
+
+- Native mobile app (iOS/Android): deferred to vNext; web responsive only for v1.
+- Google Classroom roster sync: blocked on partner API access agreement.
+- Parent-facing portal: explicit founder decision; teachers are the only audience.
+- Bulk CSV import of historical quiz results: deferred to vNext; manual entry suffices for pilot.
+
+Bad:
+## Out of Scope
+
+- We won't build a CRM. (strawman)
+- Mobile. (no rationale)
+- Same as non-goal: student dashboard. (duplicate)
 
 ## Stop condition
+At least three items under `## Out of Scope`; each with a concrete rationale; no duplicates of non-goals; confidence reported.
 
-At least three items; no item duplicates non-goals.
+## Confidence guidance
+Lower confidence when:
+- Rationale relies on assumed roadmap not confirmed by stakeholders -> <= 0.75
+- Adjacencies are guesses about reviewer assumptions -> <= 0.75
+- Many candidates exist but unclear which 3 are most material -> <= 0.7
+- Distinction between non-goal and out-of-scope is fuzzy for some items -> <= 0.8
+Confidence >= 0.85 is required to proceed without human review.

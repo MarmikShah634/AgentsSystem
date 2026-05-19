@@ -7,7 +7,7 @@ hands_off_to:
   - tester
   - reviewer
   - security
-confidence_floor: 0.90
+confidence_floor: 0.85
 sensitive_surfaces:
   - secrets/**
   - migrations/**

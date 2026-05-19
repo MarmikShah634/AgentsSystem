@@ -3,23 +3,58 @@ id: write-tsd-overview
 category: tsd
 owner_agent: tech-spec-author
 inputs:
-  - prd_path
-  - architecture
+  - prd_path: "Filesystem path to the approved PRD markdown"
+  - architecture: "Object with {tech_stack, mermaid_diagram, data_model} from the architect"
 outputs:
-  - section
+  - section: "Markdown for the TSD Overview section, ready to be assembled into docs/tsd/<slug>.md"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: write-tsd-overview
 
-## Task
+## Purpose
+Open the TSD with a one-paragraph technical restatement of the PRD goal, a bullet list of every component touched, and explicit cross-links to PRD goal ids. This anchors every later section to the source of truth.
 
-Write the TSD overview: 1 paragraph restating the PRD goals in technical
-terms + a bullet list of components touched + cross-link to PRD section
-ids.
+## When to invoke
+Invoke as the first TSD section after architecture is complete and PRD is locked. Do NOT invoke to: paraphrase the PRD into user-facing prose, write product positioning, or expand on stack choices (that belongs in Component Contracts).
+
+## Procedure (follow exactly)
+1. Read the PRD at `prd_path`. Extract every goal id (e.g. `G-1`, `G-2`).
+2. Write one paragraph (3–6 sentences) restating the goals in engineering terms (latency, throughput, schemas, integrations) — not features.
+3. Emit a bullet list of components from `architecture.components` with one-line role descriptions; reuse the exact names from the architecture diagram.
+4. Cross-link every PRD goal id inline: `(see PRD §G-3)`. Every goal must appear at least once.
+5. Do not invent goals, components, or stack details not present in inputs.
+
+## How to think
+- The overview is a map, not a sales pitch. Concrete > evocative.
+- Every component named must appear in the architecture; do not add new ones here.
+- If the PRD lists a goal you cannot link to a component, STOP — escalate as a gap to product.
+
+## Required inputs
+`prd_path` must exist and the file must contain at least one goal id. `architecture` must have a non-empty component list and a tech stack. If either is missing, STOP.
+
+## Output format
+Markdown string starting with `## Overview`, then one paragraph, then `### Components` followed by a bullet list. No code blocks. No preamble outside the section.
+
+## Quality criteria
+Passes if: every PRD goal id is referenced; every component listed exists in architecture; paragraph is engineering-focused; no marketing language.
+Fails if: goals omitted; new components invented; paragraph reads like a press release; cross-links use prose instead of ids.
+
+## Common pitfalls
+- Restating the PRD almost verbatim instead of translating to technical terms.
+- Listing components in a different order than the architecture diagram.
+- Hyping the stack (`a modern, scalable…`); cut adjectives.
+- Forgetting goals that don't fit cleanly; every one must be linked.
+
+## Examples
+Good: "The system exposes a REST API (G-1) backed by Postgres, processes uploads asynchronously via a worker (G-3), and emits webhooks under 500ms p99 (G-2). Components: api, worker, db, webhook-dispatcher."
+Bad: "We're building an exciting new platform that empowers users…" (no ids, marketing tone).
 
 ## Stop condition
+Section markdown exists, starts with `## Overview`, references every PRD goal id by code, lists every architecture component, and contains no invented elements.
 
-Every PRD goal is referenced by id; every component named appears in the
-architecture doc.
+## Confidence guidance
+Lower when: PRD goals lack ids (≤0.7 — author must infer), architecture components don't cover every goal (≤0.7), tech stack ambiguous (≤0.8). Need ≥0.85.

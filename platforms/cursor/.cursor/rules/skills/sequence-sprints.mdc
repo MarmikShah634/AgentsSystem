@@ -8,24 +8,68 @@ id: sequence-sprints
 category: sprint
 owner_agent: sprint-planner
 inputs:
-  - stories
-  - velocity
+  - stories: "array of {story_id, points, depends_on?, epic_id, notes}"
+  - velocity: "team velocity in points per sprint, default 25"
 outputs:
-  - sprints
+  - sprints: "array of {sprint_id, story_ids, total_points}"
+  - rationale: "1-3 sentences on critical path and slack"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: sequence-sprints
 
-## Task
+## Purpose
+Pack estimated stories into sequential sprints that respect dependency order and stay within velocity. Output drives release planning and sets the boundary each sprint goal must summarize.
 
-Pack stories into sprints respecting:
+## When to invoke
+Invoke when every story has a Fibonacci point value AND a (possibly empty) `depends_on` AND `velocity` is set.
+Do NOT invoke to: estimate (use estimate-story-points), write goals (use assign-sprint-goals), or replan after a sprint slips.
 
-- Sum(story_points) ≤ `velocity` (default 25).
-- Dependency order (DAG).
-- Earliest finish for dependency-blocked stories.
+## Procedure (follow exactly)
+1. Default `velocity` to 25 if absent. Reject velocities <8 or >60 as miscalibrated — STOP if so.
+2. Build the dependency DAG over stories. Detect cycles. Cycle → STOP and emit a finding.
+3. Greedy pack by topological depth: at each depth layer, fill the current sprint with stories until adding the next story would exceed velocity.
+4. If a story alone exceeds velocity, STOP — it must be split first.
+5. Prefer earliest finish for dependency-blocked stories: place them in the lowest-numbered sprint that still respects all their predecessors.
+6. Compute `total_points` per sprint. Verify ≤ velocity and ≥ 0.6 × velocity where possible; if structural reasons prevent fill, note in rationale.
+
+## How to think
+- Two stories independent but both 13 → split sprint between them and one filler; don't pack to 26.
+- Story has cross-epic dependency → it follows the predecessor's sprint, not its epic's natural slot.
+- Last sprint underfilled → acceptable if no later stories exist; do not pull future work forward to pad.
+- Velocity feels generous → keep it; do not silently inflate.
+
+## Required inputs
+Stories array with points + depends_on; velocity scalar. Missing → STOP.
+
+## Output format
+```json
+{"sprints":[
+  {"sprint_id":"SP1","story_ids":["S1","S3","S5"],"total_points":21},
+  {"sprint_id":"SP2","story_ids":["S2","S4"],"total_points":18}],
+ "rationale":"critical path S1→S2; SP1 packed near velocity, SP2 leaves slack for S4 unknowns.",
+ "confidence":0.0}
+```
+
+## Quality criteria
+Passes if: no sprint exceeds velocity; every dependency satisfied (predecessor sprint ≤ successor sprint); no orphan stories; no cycle.
+Fails if: any over-commit; cross-sprint dependency violated; orphan story; cycle emitted as sprint.
+
+## Common pitfalls
+- Sorting by epic then packing — breaks dependencies across epics.
+- Allowing total_points to equal velocity on every sprint (no slack for risk).
+- Pulling future stories backward to fill a thin sprint.
+- Treating notes/risky stories as zero-cost.
+
+## Examples
+✅ velocity=25. SP1: S1(3)+S3(8)+S5(5)+S7(5)=21. SP2: S2(13)+S4(8)=21. Dependencies S1→S2 respected.
+❌ Anti-pattern: SP1 packs to 30 points "because S7 is small"; or places S2 (depends on S1) in SP1 alongside S1.
 
 ## Stop condition
+Every story placed in exactly one sprint, every sprint within velocity, every dependency respected, no cycles.
 
-No sprint over-committed; no dependency violated; no story orphaned.
+## Confidence guidance
+Lower when: dense dependency graph (≤0.8), velocity new/uncalibrated (≤0.75), many 13-point stories (≤0.75). ≥0.85 required.

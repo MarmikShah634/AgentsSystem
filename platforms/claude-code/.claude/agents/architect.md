@@ -5,7 +5,7 @@ owns:
   - skills/architecture/*
 hands_off_to:
   - planner
-confidence_floor: 0.90
+confidence_floor: 0.85
 sensitive_surfaces:
   - infra/**
 ---

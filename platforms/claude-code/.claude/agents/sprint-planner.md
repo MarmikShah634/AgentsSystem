@@ -9,7 +9,7 @@ owns:
   - skills/sprint/assign-sprint-goals
 hands_off_to:
   - sprint-reviewer
-confidence_floor: 0.90
+confidence_floor: 0.85
 sensitive_surfaces: []
 ---
 

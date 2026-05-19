@@ -8,25 +8,88 @@ id: write-functional-requirements
 category: prd
 owner_agent: prd-author
 inputs:
-  - goals
-  - personas
+  - goals: "markdown of the Goals subsection"
+  - personas: "markdown of the User Personas section"
 outputs:
-  - section
+  - section: "markdown for the Functional Requirements section, numbered FR-1.."
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: write-functional-requirements
 
-## Task
+## Purpose
+Enumerate observable system behaviors as numbered Functional Requirements. Each FR uses the canonical SHALL form. FRs are the contract every test author and implementer treats as ground truth.
 
-Numbered FR-1, FR-2, … each in the form:
+## When to invoke
+Invoke as PRD section 5, after Goals and Personas exist. FRs must trace back to a goal AND a persona's primary job.
 
-> The system SHALL **\<observable behaviour\>** when **\<trigger\>**.
+Do NOT invoke to: list quality attributes (use write-non-functional-requirements), define acceptance criteria (those are downstream), or describe UI mocks.
 
-One behaviour per FR. No "should" — only "shall". No implementation hints.
+## Procedure (follow exactly)
+1. Parse `goals` to a list of outcomes and `personas` to a list of jobs.
+2. For each (goal, persona-job) pair the release must support, draft one FR:
+   `FR-<N>: The system SHALL <observable behavior> when <trigger>.`
+3. Rules:
+   a. "SHALL" only; never "should", "may", "could".
+   b. One behavior per FR; no compound `and`/`or` chaining behaviors.
+   c. Trigger must be observable (user action, time event, external signal). "When data is invalid" is fine if invalid is defined elsewhere; "when appropriate" is not.
+   d. No implementation hints (no tech, framework, library, schema).
+   e. Number sequentially `FR-1`, `FR-2`, ...
+3. After drafting, add a coverage table mapping FR -> goal id (or goal text) and FR -> persona job.
+4. If a goal has zero FRs or a persona primary job has zero FRs, STOP and either add an FR or record an open question; do not silently skip.
+
+## How to think
+- Two behaviors look related ("create and edit") -> two FRs.
+- Behavior is internal ("the system shall index records") -> rewrite to external symptom ("the system SHALL return matching records within the search response").
+- Trigger absent ("the system SHALL support exports") -> add a trigger ("when the teacher clicks Export").
+- Persona has no FR coverage -> ask: should the release serve this persona? If not, push them to non-goals.
+
+## Required inputs
+`goals` and `personas` both non-empty markdown. If either is missing, STOP and route back.
+
+## Output format
+{
+  "section": "## Functional Requirements\n\n- FR-1: The system SHALL <behavior> when <trigger>.\n- ...\n\n### Coverage\n| FR | Goal | Persona Job |\n|----|------|-------------|\n| FR-1 | <goal> | <job> |\n",
+  "confidence": 0.0
+}
+
+## Quality criteria
+Passes if: every FR uses SHALL + observable behavior + trigger; every goal has >=1 FR; every persona primary job has >=1 FR; coverage table present; no implementation language.
+Fails if: weak verbs (should/may); compound behaviors; missing triggers; orphan goals or persona jobs without coverage; tech mentioned.
+
+## Common pitfalls
+- "The system SHALL be user-friendly." (not observable)
+- "The system SHALL support exporting and importing and sharing." (compound)
+- "The system SHALL use Postgres for persistence." (tech, not behavior)
+- "FR-1: Login." (not a sentence, no trigger)
+
+## Examples
+Good:
+## Functional Requirements
+
+- FR-1: The system SHALL display the class roster sorted by last name when the teacher opens a class page.
+- FR-2: The system SHALL schedule a quiz for a future date when the teacher submits the schedule form with a valid date.
+- FR-3: The system SHALL return a permission-denied error when a teacher requests a class they do not own.
+
+### Coverage
+| FR | Goal | Persona Job |
+|----|------|-------------|
+| FR-2 | Enable one-action scheduling | Assign weekly mastery checks |
+
+Bad:
+- FR-1: The system should be fast and reliable. (weak verb, not observable)
+- FR-2: The system SHALL do quizzes. (no trigger, no behavior)
 
 ## Stop condition
+FR list numbered and SHALL-formed; coverage table maps each FR to a goal and persona job; every goal and persona primary job covered (or flagged); confidence reported.
 
-Every goal maps to at least one FR; every persona's primary job maps to
-at least one FR.
+## Confidence guidance
+Lower confidence when:
+- A persona job has no clear FR mapping -> <= 0.7
+- Triggers had to be inferred -> <= 0.75
+- Behaviors that ought to be FRs feel more like NFRs (perf, security) -> <= 0.75
+- Goals are vague (cascaded uncertainty) -> <= 0.7
+Confidence >= 0.85 is required to proceed without human review.

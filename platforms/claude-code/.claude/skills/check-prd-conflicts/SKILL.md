@@ -3,21 +3,91 @@ id: check-prd-conflicts
 category: prd
 owner_agent: prd-reviewer
 inputs:
-  - prd_path
+  - prd_path: "absolute path to the PRD file under docs/prd/"
 outputs:
-  - findings
+  - findings: "list of {section, kind: 'conflicting', msg, fix} entries citing both sides of each conflict"
+  - verdict: "'pass' if zero conflicts else 'revise'"
+  - readiness_score: "float in [0,1] for this dimension"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.95
 ---
 
 # Skill: check-prd-conflicts
 
-## Task
+## Purpose
+Detect contradictions across PRD sections — goals vs non-goals, FR vs NFR, persona constraint vs FR, metric vs goal. Cite both sides of every conflict. Never rewrite.
 
-Detect contradictions between sections — e.g. a goal that contradicts a
-non-goal, an FR that contradicts an NFR (perf vs. completeness), a
-persona constraint that contradicts an FR.
+## When to invoke
+Invoke after completeness passes. Can run in parallel with check-prd-testability and check-prd-ambiguity. Conflicts often surface after FR and NFR drafts are complete.
+
+Do NOT invoke to: judge testability (use check-prd-testability), score metrics quality (use check-prd-metrics-quality), or repair conflicts (review only).
+
+## Procedure (follow exactly)
+1. Read `prd_path`. Build a mental map of: goals, non-goals, personas (with constraints), FRs, NFRs, metrics, out-of-scope items.
+2. Apply these conflict patterns:
+   a. Goal vs Non-Goal — a goal asserts an outcome that a non-goal forbids.
+   b. Goal vs Out-of-Scope — a goal requires a capability listed as out-of-scope.
+   c. FR vs NFR — an FR's behavior cannot coexist with an NFR's bound (e.g. FR requires full-table scan response, NFR caps p95 at 50ms with no scan budget).
+   d. Persona constraint vs FR — persona has constraint X (e.g. no install rights) but FR requires X-violating capability (e.g. installed desktop client).
+   e. Metric vs Goal — a target value conflicts with the direction of the goal (goal: reduce X; target: increase X).
+   f. NFR vs NFR — e.g. unlimited retention vs strict deletion deadline.
+3. For each conflict, emit a finding with:
+   - `section` — primary section where conflict surfaces (use comma-separated section names).
+   - `kind` — `"conflicting"`.
+   - `msg` — quote both sides with ids ("FR-2 vs NFR-1: FR-2 requires X while NFR-1 forbids X").
+   - `fix` — one-sentence direction for resolution (NOT a rewrite of either side).
+4. Verdict `pass` iff zero findings. Otherwise `revise`.
+5. `readiness_score` = 1.0 - 0.15 * count(findings), floor 0.0.
+
+## How to think
+- Two items look related but do not actually contradict -> NOT a conflict; do not flag.
+- A "tension" (perf vs completeness) is not automatically a conflict; only flag if both sides cannot simultaneously be satisfied as stated.
+- Subtle conflicts: a goal "minimize teacher time" and an FR forcing multi-step confirmation -> conflict only if FR clearly bloats time without a non-goal carve-out.
+- Conflict only inside the Open Questions section -> not a conflict (open questions enumerate unknowns).
+- NEVER rewrite. NEVER pick a side. The author resolves.
+
+## Required inputs
+`prd_path` readable; all nine sections present. If any are missing, STOP and route to check-prd-completeness.
+
+## Output format
+{
+  "findings": [
+    {"section": "Functional Requirements, Non-Functional Requirements", "kind": "conflicting", "msg": "FR-4 requires offline write while NFR-3 mandates immediate server-side persistence.", "fix": "Decide whether offline writes are queued or whether the FR is reduced; update both sides."}
+  ],
+  "verdict": "pass|revise",
+  "readiness_score": 0.0,
+  "confidence": 0.0
+}
+
+## Quality criteria
+Passes if: every conflict pattern checked; findings cite ids on both sides; fixes direct authors to a decision; verdict and score consistent.
+Fails if: findings cite only one side; flagging tensions that can coexist; rewrites suggested; verdict inconsistent.
+
+## Common pitfalls
+- Confusing prioritization tradeoffs with logical conflicts.
+- Missing constraint-vs-FR conflicts because the persona section was read in isolation.
+- Citing a conflict without naming the offending item ids.
+- Suggesting which side wins — that is the author's call.
+
+## Examples
+Good finding:
+{"section": "Goals & Non-Goals, Out of Scope", "kind": "conflicting", "msg": "Goal 'enable parent visibility into quiz results' conflicts with Out of Scope item 'Parent-facing portal'.", "fix": "Either remove the goal or move the parent portal into scope; current pair is inconsistent."}
+
+Good finding:
+{"section": "User Personas, Functional Requirements", "kind": "conflicting", "msg": "Persona K-8 teacher constraint 'no install rights' conflicts with FR-7 'teacher SHALL install the desktop sync client'.", "fix": "Re-architect FR-7 as a web flow or scope the persona to admins; resolve before assemble."}
+
+Bad finding:
+{"section": "...", "kind": "tension", "msg": "These feel in tension", "fix": "..."} (kind invented, vague)
 
 ## Stop condition
+All conflict patterns examined; findings cite both sides with ids; verdict and readiness_score consistent; confidence reported.
 
-Findings list every conflicting pair with both citations.
+## Confidence guidance
+Lower confidence when:
+- Conflict depends on numbers not stated explicitly -> <= 0.9
+- One side appears in Open Questions (i.e. unresolved) -> <= 0.9
+- Persona constraints are inferred not stated -> <= 0.85
+- Tradeoff vs conflict is judgment-heavy -> <= 0.85
+Confidence >= 0.95 is required to proceed without human review.

@@ -3,23 +3,94 @@ id: run-tests
 category: testing
 owner_agent: tester
 inputs:
-  - runner
-  - target
+  - runner: "detected or supplied: pytest|jest|vitest|mocha|go|cargo|rspec"
+  - target: "path, package, or pattern; empty = entire suite"
+  - extra_args: "optional array of pass-through flags"
 outputs:
-  - results
+  - results: "{passed, failed, skipped, duration_ms, log_tail}"
+  - exit_code: "integer process exit code"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: run-tests
 
-## Task
+## Purpose
+Execute the project's native test runner over `target` and return a
+structured pass/fail summary. Anti-hallucination: parse the runner's
+real output — never fabricate counts from absent data.
 
-Execute the project's native test runner and parse pass/fail counts.
+## When to invoke
+Plan step requires test execution AND a runner is detectable AND the
+working tree is in a runnable state (deps installed, build ok).
+Do NOT invoke when: runner not installed, target glob matches zero
+files, or environment requires credentials not supplied.
 
-## Output
+## Procedure (follow exactly)
+1. Resolve the runner command from project conventions:
+   - pytest: `pytest <target> -q --maxfail=0`
+   - jest: `npx jest <target> --json` (parse JSON)
+   - vitest: `npx vitest run <target> --reporter=json`
+   - mocha: `npx mocha <target> --reporter json`
+   - go test: `go test ./... -json` then aggregate
+   - cargo: `cargo test --no-fail-fast --message-format=json`
+   - rspec: `bundle exec rspec <target> --format json`
+2. Run with a hard timeout (default 10 min). Capture stdout, stderr,
+   exit code.
+3. Parse counts from the structured reporter when available; fall back
+   to regex on text output only when JSON is unavailable.
+4. On failure (exit code ≠ 0 OR failed > 0), keep the last 50 lines of
+   combined output in `log_tail`.
+5. Never retry to mask flakes. Report what happened.
 
+## How to think
+- Runner missing → STOP, return clear error, do not invent counts.
+- Coverage flags requested → defer to `analyze-coverage`; run-tests
+  only reports pass/fail.
+- Watch mode → forbidden; always run single-shot.
+- Partial run requested (single test) → honour `target` exactly.
+
+## Required inputs
+`runner` resolvable to an executable. `target` may be empty (means
+"whole suite").
+
+## Output format
 ```json
-{"passed": 0, "failed": 0, "skipped": 0, "duration_ms": 0,
- "log_tail": "last 50 lines on failure"}
+{"passed": 42, "failed": 1, "skipped": 0, "duration_ms": 18342,
+ "log_tail": "FAIL test_x.py::test_y - AssertionError ...",
+ "exit_code": 1, "confidence": 0.95}
 ```
+
+## Quality criteria
+Pass: counts exactly match runner output; duration in ms; log_tail
+captured only on failure; exit code propagated.
+Fail: invented counts, summing across reruns, swallowing stderr,
+ignoring non-zero exit when failed == 0 (means crash, not pass).
+
+## Common pitfalls
+- Treating `skipped > 0` as failure (it is not — but surface it).
+- Parsing text when JSON reporter exists.
+- Forgetting to escape glob patterns passed by shell.
+- Reporting "0 failed" when the runner itself crashed (check exit
+  code first).
+
+## Examples
+Pass output for pytest:
+```
+passed: 12  failed: 0  skipped: 1  duration_ms: 5421  exit_code: 0
+```
+Fail (runner crash):
+```
+passed: 0  failed: 0  skipped: 0  exit_code: 2
+log_tail: "ImportError: cannot import name 'X' from 'y'"
+```
+
+## Stop condition
+Runner returned (or timed out); counts parsed; structured result
+emitted; no further retries.
+
+## Confidence guidance
+JSON reporter used = 0.95; regex fallback ≤0.85; partial parse (some
+counts missing) ≤0.75; runner timeout ≤0.6. Must be ≥0.85 to emit.

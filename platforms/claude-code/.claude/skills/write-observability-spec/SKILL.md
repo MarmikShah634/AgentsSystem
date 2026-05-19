@@ -3,28 +3,59 @@ id: write-observability-spec
 category: tsd
 owner_agent: tech-spec-author
 inputs:
-  - functional_requirements
-  - non_functional_requirements
+  - functional_requirements: "FRs from the PRD"
+  - non_functional_requirements: "NFRs with measurable targets (latency, availability, performance budgets)"
 outputs:
-  - section
+  - section: "Markdown for the TSD Observability Spec section (Metrics, Logs, Traces, Budgets)"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: write-observability-spec
 
-## Task
+## Purpose
+Define exactly what the system measures, logs, traces, and budgets. Every numeric NFR must be observable; every error-model entry must be loggable. After this section, an SRE can wire dashboards and alerts without guessing names.
 
-Three subsections:
+## When to invoke
+Invoke after Component Contracts, Error Model, and API Contracts. Do NOT invoke to: configure a specific monitoring vendor (out of scope), pick log retention windows (ops decision), or define on-call rotations.
 
-1. **Metrics** — name, type (counter/gauge/histogram), labels, target.
-2. **Logs** — event name + structured field schema + level.
-3. **Traces** — spans + parent/child relations.
+## Procedure (follow exactly)
+1. **Metrics**: emit a table with `name`, `type` (`counter`|`gauge`|`histogram`), `labels[]`, `unit`, `target` (the NFR it satisfies, by id). Names: `<domain>_<thing>_<unit>` e.g. `http_request_duration_ms`.
+2. **Logs**: emit a structured-event table with `event_name`, `level` (`debug`|`info`|`warn`|`error`), `fields` (typed). At least one log event per error-model code.
+3. **Traces**: list spans and parent/child relations. Each external call (DB, HTTP, queue) gets a span.
+4. **Budgets**: front-end performance budgets (LCP ms, CLS, TTFB ms, bundle KB) and back-end budgets (p50/p95/p99 latency ms per endpoint category). Tie each budget to an NFR id.
+5. Reference error codes from the Error Model by stable id inside log events.
 
-Plus performance **budgets** (LCP, CLS, TTFB, bundle KB) for the
-performance-auditor.
+## How to think
+- If an NFR has a number, it gets a metric. If it doesn't, push back on the PRD (numbers later, not here).
+- Cardinality discipline: never label with user_id; use bucket labels.
+- Span names must match component names where possible.
+- Budgets should be tight enough to be informative, loose enough to be achievable.
+
+## Required inputs
+At least one NFR with a numeric target. If NFRs are absent, STOP — observability without targets is decorative.
+
+## Output format
+Markdown starting with `## Observability Spec` with four subsections: `### Metrics`, `### Logs`, `### Traces`, `### Budgets`. Tables or bullet lists, fenced JSON for structured field schemas.
+
+## Quality criteria
+Passes if: every numeric NFR has a metric; every error-model code has a log event; spans cover every external call; budgets per surface and per endpoint category; no high-cardinality labels.
+Fails if: NFR with no metric; error code with no log; PII in labels; missing budgets; vague levels.
+
+## Common pitfalls
+- Logging at `info` for things that should be `warn`/`error`.
+- Histograms without unit declared.
+- One trace per request and nothing nested — useless.
+- Budgets copy-pasted from elsewhere without tying to NFR ids.
+
+## Examples
+Good: `http_request_duration_ms` histogram with labels `[route, status_class]`, target NFR-2 (p95 < 250ms); log event `order.rejected` with `code=ORDER_NOT_FOUND` at `warn`.
+Bad: counter `errors` with no labels; logs without codes; LCP budget of "fast".
 
 ## Stop condition
+Section exists with Metrics/Logs/Traces/Budgets subsections; every numeric NFR is observable; every error code is logged; every external boundary is traced; budgets tie to NFR ids.
 
-Every NFR with a number has a metric that measures it; every error in
-the error model has a log event.
+## Confidence guidance
+Lower when: NFRs lack numbers (≤0.7), error model incomplete (≤0.75), traces span ambiguous boundaries (≤0.8), budgets unsupported by data (≤0.8). Need ≥0.85.

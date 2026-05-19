@@ -3,29 +3,66 @@ id: assemble-tsd
 category: tsd
 owner_agent: tech-spec-author
 inputs:
-  - sections
-  - slug
+  - sections: "Object mapping section name to its markdown body (overview, component_contracts, data_contracts, api_contracts, error_model, observability, rollout)"
+  - slug: "Filesystem-safe kebab-case identifier used as the file name under docs/tsd/"
 outputs:
-  - tsd_path
+  - tsd_path: "Absolute path to the assembled docs/tsd/<slug>.md file"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: assemble-tsd
 
-## Task
+## Purpose
+Concatenate the seven authored TSD sections into `docs/tsd/<slug>.md` in the canonical order, verify no placeholders remain, and confirm cross-references resolve. The assembled file is what reviewers and downstream agents consume.
 
-Stitch sections into `docs/tsd/<slug>.md` in this fixed order:
+## When to invoke
+Invoke once all seven sections are produced and individually reviewed. Do NOT invoke to: re-author a section, fix factual content (return to the section author), or rename the slug after publication.
 
-1. Overview
-2. Component Contracts
-3. Data Contracts
-4. API Contracts
-5. Error Model
-6. Observability
-7. Rollout Plan
+## Procedure (follow exactly)
+1. Validate `sections` contains exactly these keys: `overview`, `component_contracts`, `data_contracts`, `api_contracts`, `error_model`, `observability`, `rollout`. Reject extras and missing.
+2. Concatenate in this fixed order:
+   1. Overview
+   2. Component Contracts
+   3. Data Contracts
+   4. API Contracts
+   5. Error Model
+   6. Observability
+   7. Rollout Plan
+3. Prepend a YAML front-matter block with `slug`, `created_at` (UTC), and `tsd_version: 1`.
+4. Scan for placeholder markers (`<...>`, `TODO`, `TBD`, `FIXME`). If any remain, STOP and return the offending section names.
+5. Resolve cross-links: ensure every `(see PRD §...)` references a known PRD goal id, every error code referenced in API Contracts exists in Error Model, every metric in Rollout exists in Observability.
+6. Write to `docs/tsd/<slug>.md`. Do not overwrite an existing file silently — append `-v2`, `-v3` if needed.
+
+## How to think
+- This skill is a stitcher, not an editor. Do not rewrite section content.
+- A missing section is a hard stop. Do not synthesize.
+- Filename collisions usually indicate a duplicate effort; check with caller before bumping versions.
+
+## Required inputs
+All seven section keys must be present and non-empty. `slug` must match `^[a-z0-9][a-z0-9-]{1,63}$`.
+
+## Output format
+`{"tsd_path": "/abs/path/docs/tsd/<slug>.md", "confidence": 0.0}`
+
+## Quality criteria
+Passes if: all seven headings present in order; no placeholders; cross-links resolve; front-matter populated; file written atomically.
+Fails if: any section missing; placeholders remain; broken cross-links; overwriting without versioning.
+
+## Common pitfalls
+- Allowing extra keys in `sections` and silently appending them.
+- Failing to detect a `TBD` hidden inside a code fence.
+- Overwriting a published TSD instead of versioning.
+- Forgetting the YAML front-matter.
+
+## Examples
+Good: file `docs/tsd/orders-v1.md` with front-matter, seven headings in order, no placeholders, all cross-refs resolve.
+Bad: file missing the Error Model section; contains `<fill in later>`; references error code `FOO` that is not in the Error Model.
 
 ## Stop condition
+File exists at `docs/tsd/<slug>.md`, contains exactly the seven canonical sections in order, front-matter is present, no placeholder markers remain, and every cross-reference resolves to a real anchor.
 
-All seven headings present; no `<...>` placeholders; PRD cross-links
-resolve.
+## Confidence guidance
+Lower when: section authors marked their confidence < 0.85 (≤0.8 — assembly cannot raise quality), placeholders had to be flagged (≤0.6), slug collision required versioning (≤0.8). Need ≥0.85.

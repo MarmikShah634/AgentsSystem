@@ -8,15 +8,65 @@ id: sequence-dependencies
 category: planning
 owner_agent: planner
 inputs:
-  - plan_steps
+  - plan_steps: "DAG of plan steps with depends_on edges from decompose-task"
 outputs:
-  - ordered_steps
+  - ordered_steps: "topologically ordered plan_steps array, stable on ties"
+  - rationale: "1-3 sentences citing critical path and parallel opportunities"
+  - confidence: "float in [0,1]"
 requires_plan: false
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: sequence-dependencies
 
-## Task
+## Purpose
+Produce a deterministic topological order of plan steps so the orchestrator can execute them. Detect cycles and dependency violations before execution begins.
 
-Topologically order plan steps. Fail if a cycle is detected.
+## When to invoke
+Invoke when `plan_steps` is populated AND every step has a `depends_on` field (possibly empty).
+Do NOT invoke to: estimate effort (use estimate-effort), split steps further (use decompose-task), or schedule across sprints (use sequence-sprints).
+
+## Procedure (follow exactly)
+1. Build adjacency list: edge from each entry in `depends_on` to the step.
+2. Run Kahn's algorithm (in-degree based topological sort). Break ties by ascending `step_id` for determinism.
+3. If any node remains with in-degree > 0 after the sort, a cycle exists — STOP and emit a finding listing the cycle nodes; do not produce `ordered_steps`.
+4. Verify every `depends_on` target exists in `plan_steps`. Unknown reference → STOP.
+5. Identify the critical path (longest chain). Note parallelizable groups (same depth) in rationale.
+6. Emit the ordered array preserving original step records.
+
+## How to think
+- Two steps both depend on the same artifact → they may run in parallel; do not invent a fake dependency to serialize them.
+- Test step has `test_pair` but no `depends_on` on its code step → add the dependency before sorting.
+- Step depends on itself → cycle; STOP.
+- All steps independent → flat order by `step_id`; rationale notes full parallelism.
+
+## Required inputs
+Every step must carry `step_id` and `depends_on` (array, may be empty). Missing → STOP.
+
+## Output format
+```json
+{"ordered_steps":[{...step...},{...}],
+ "rationale":"critical path: s1→s3→s5; s2 and s4 parallel.",
+ "confidence":0.0}
+```
+
+## Quality criteria
+Passes if: order respects every `depends_on`; ties broken by `step_id`; cycle detection report present when applicable; rationale names the critical path.
+Fails if: any edge violated; nondeterministic ordering; cycle silently dropped; missing dependency target ignored.
+
+## Common pitfalls
+- Using DFS without tie-break — produces nondeterministic output.
+- Treating `test_pair` as a dependency edge automatically (it isn't unless declared in `depends_on`).
+- Reporting "no cycle" when an unknown step_id reference exists.
+- Adding artificial dependencies to flatten the DAG.
+
+## Examples
+✅ s1 (no deps) → s2 (deps s1) → s3 (deps s1) → s4 (deps s2,s3). Output order: s1,s2,s3,s4. Rationale: critical path s1→s2→s4; s3 parallel with s2.
+❌ Anti-pattern: emitting s2 before s1 because s2's step_id sorts first; ignoring that s2 depends on s1.
+
+## Stop condition
+Ordered array emitted, every dependency respected, ties broken by `step_id`, OR a cycle finding emitted with the offending nodes named.
+
+## Confidence guidance
+Lower when: cycle detected (force 0.0 and STOP), missing dependency target (≤0.5), >30 steps with dense edges (≤0.8). ≥0.85 required.

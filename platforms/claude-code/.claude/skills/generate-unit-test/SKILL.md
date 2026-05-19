@@ -3,25 +3,109 @@ id: generate-unit-test
 category: testing
 owner_agent: tester
 inputs:
-  - target_path
-  - acceptance_criteria
+  - target_path: "absolute path to the source file under test"
+  - acceptance_criteria: "list of Given/When/Then statements from the plan step"
+  - runner_hint: "optional override; otherwise detect from project files"
 outputs:
-  - test_file_path
+  - test_file_path: "absolute path to the created test file"
+  - rationale: "1-3 sentence summary of what is covered and why"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: generate-unit-test
 
-## Task
+## Purpose
+Produce one focused unit test file that exercises the function/module at
+`target_path` against the supplied acceptance criteria, using the
+project's native runner. Anti-hallucination: never invent a runner —
+detect it from manifests.
 
-Write a unit test exercising the function/module at `target_path`. Use
-the project's native runner (detected, not assumed). Include:
+## When to invoke
+Plan step says "generate unit test for X" AND `target_path` exists AND
+`acceptance_criteria` is non-empty AND no existing test file already
+covers the same target.
+Do NOT invoke when: criteria are vague ("test it works"), target is a
+config/asset file, or the project lacks a configured runner.
 
-- One test per G/W/T criterion.
-- At least one negative test (bad input / error path).
+## Procedure (follow exactly)
+1. Detect the runner by inspecting manifests in this order:
+   `pyproject.toml`/`pytest.ini` → pytest; `package.json` scripts +
+   devDeps → jest|vitest|mocha; `go.mod` → go test; `Cargo.toml` →
+   cargo test; `Gemfile` → rspec; `*.csproj` → xunit|junit. If none
+   match, STOP and lower confidence.
+2. Locate sibling test directory (`tests/`, `__tests__/`, `_test.go`
+   neighbour, etc.). Reuse — never create a new convention.
+3. For each acceptance criterion produce three cases: happy path, one
+   edge case (boundary, empty, null), one error path (raises/rejects).
+4. Use the runner's idiomatic fixtures/mocks (pytest `monkeypatch`,
+   Jest `jest.mock`, Vitest `vi.mock`). Do not import production
+   network or DB code — stub at the seam.
+5. Run the new tests once. They must pass against current code; if any
+   fail, fix the test (not the source).
+
+## How to think
+- Criterion ambiguous (no observable behaviour) → STOP, ask human.
+- Target has side effects on import → stub at module load, lower
+  confidence to ≤0.8.
+- Target depends on time/random → inject clock or seed; never assert
+  on `Date.now()` directly.
+- Multiple runners installed → prefer the one referenced in CI config.
+
+## Required inputs
+`target_path` must resolve to a file. `acceptance_criteria` must contain
+at least one G/W/T triple. Missing either → STOP.
+
+## Output format
+```json
+{"test_file_path": "/abs/path/test_x.py",
+ "rationale": "Covers 3 criteria, 1 happy + 1 edge + 1 error each.",
+ "confidence": 0.0}
+```
+
+## Quality criteria
+Pass: one assertion per behavioural claim; no test depends on another's
+order; no real network/DB/filesystem writes outside tmp dirs; runner
+discovers and executes the file; all new tests green.
+Fail: shared mutable state between tests; `assert True` placeholders;
+skipping with `xfail`/`it.skip` to make it pass; tests that mirror
+implementation instead of behaviour.
+
+## Common pitfalls
+- Asserting log output instead of return value.
+- Mocking the system under test itself.
+- Using `time.sleep` to wait — use fake clock.
+- Catching the assertion exception and continuing.
+
+## Examples
+Pass (pytest):
+```python
+def test_parse_returns_iso_for_valid_input():
+    assert parse("2024-01-02") == date(2024, 1, 2)
+
+def test_parse_raises_on_empty():
+    with pytest.raises(ValueError):
+        parse("")
+```
+Pass (Jest):
+```js
+describe("parse", () => {
+  it("returns ISO for valid input", () => {
+    expect(parse("2024-01-02")).toEqual(new Date("2024-01-02"));
+  });
+  it("throws on empty", () => {
+    expect(() => parse("")).toThrow(TypeError);
+  });
+});
+```
+Fail: `def test_works(): assert True` — no behaviour exercised.
 
 ## Stop condition
+Test file exists at the canonical location; runner discovers it without
+config changes; every new test passes; no source file modified.
 
-Test file exists, runner discovers it, all new tests pass against the
-current code.
+## Confidence guidance
+Runner ambiguous ≤0.75; criteria vague ≤0.7; target has unstubbed I/O
+≤0.8; new test directory invented ≤0.6. Must be ≥0.85 to emit.

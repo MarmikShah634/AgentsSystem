@@ -3,30 +3,71 @@ id: critique-ui-copy
 category: design
 owner_agent: designer
 inputs:
-  - target_path
+  - target_path: "absolute path to a component, template, or strings file with user-facing copy"
 outputs:
-  - findings
+  - findings: "array of {area, severity, path, line, original, rewrite, msg}"
+  - verdict: "'pass' | 'revise'"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: critique-ui-copy
 
-## Task
+## Purpose
+Apply STYLE.md / impeccable editorial rules to every user-facing string in the target. Flag hollow adjectives, generic CTAs, weak openers, and error messages that hide cause + recovery.
 
-Apply STYLE.md / impeccable editorial rules to user-facing strings.
+## When to invoke
+Invoke when `target_path` contains user-facing strings (component JSX text, i18n catalog, marketing copy, error message tables).
+Do NOT invoke to: audit code comments, log messages, or developer-facing documentation.
 
-## Checklist
+## Procedure (follow exactly)
+1. Enumerate every user-facing string. Skip aria-labels only if they duplicate visible copy verbatim.
+2. Rule C1 — First sentence of any block opens with a stance, not a setup. Flag (severity=warn) hedged openers ("Welcome to…", "In this section…").
+3. Rule C2 — Action labels begin with a verb. Flag (severity=error) banned phrases: "Click here", "Submit", "Learn more", "Read more", "More info".
+4. Rule C3 — Banned hollow adjectives anywhere in product copy: "seamless", "robust", "elevate", "best-in-class", "powerful", "leverages", "delightful", "world-class", "cutting-edge", "innovative". Each occurrence → severity=error.
+5. Rule C4 — No em-dashes (—) in product copy. Replace with periods or colons. Flag warn.
+6. Rule C5 — Sentence case for buttons, links, headings. Title Case only for proper nouns. Flag warn.
+7. Rule C6 — Error messages must state cause AND recovery; flag error if either is missing.
+8. Every finding includes `original` text, a concrete `rewrite`, and the rule citation in `msg`.
+9. `verdict = "pass"` iff zero error findings.
 
-1. Open strong — the first sentence states a stance, not a setup.
-2. Verbs-first action labels. Banned: "Click here", "Submit", "Learn more".
-3. Banned hollow adjectives: "seamless", "robust", "elevate",
-   "best-in-class", "powerful", "leverages", "delightful".
-4. No em-dashes in product copy (taste convention).
-5. Sentence case for buttons; Title Case only for proper nouns.
-6. Error messages name the cause and the recovery, not the rule violated.
+## How to think
+- String is interpolated with a variable → audit the template; do not assume the variable is acceptable copy.
+- Marketing hero copy uses an em-dash for stylistic flourish → still flag warn; brand exceptions must be documented elsewhere.
+- Error message says "Something went wrong. Try again." → missing cause; flag error.
+- Localized copy file → audit each language? Audit only the source locale; flag others for parallel review.
+
+## Required inputs
+`target_path` non-empty with user-facing strings. Code-only or comments-only → STOP with note.
+
+## Output format
+```json
+{"findings":[
+  {"area":"copy","severity":"error","path":"src/Cta.tsx","line":14,
+   "original":"Click here to learn more about our powerful platform.",
+   "rewrite":"See how teams ship faster.",
+   "msg":"rule C2 (banned label) + rule C3 ('powerful')."}],
+ "verdict":"revise","confidence":0.0}
+```
+
+## Quality criteria
+Passes if: every string audited against C1-C6; every error finding cites the rule(s); every finding has a concrete `rewrite`; verdict respects error presence.
+Fails if: missed a rule; offered "tighten copy" as a fix; left `rewrite` empty; verdict pass with banned phrases present.
+
+## Common pitfalls
+- Allowing "Submit" because the form actually submits — still banned; prefer "Save changes", "Send invite", "Create account".
+- Accepting "robust" inside a tooltip because it's a small surface.
+- Issuing rewrites that introduce new banned words.
+- Auditing log output and flagging dev-facing strings.
+
+## Examples
+✅ Finding: error, original "Click here", rewrite "View pricing", msg "rule C2: banned label".
+❌ Anti-pattern: "copy needs work" with no line numbers, no rewrites, no rule references.
 
 ## Stop condition
+Every user-facing string audited against C1-C6; findings include original+rewrite+rule; verdict matches error presence.
 
-Findings list every offending string with its `path`, `line`, and a
-concrete rewrite.
+## Confidence guidance
+Lower when: strings interpolated with unknown variables (≤0.75), brand voice unspecified (≤0.8), i18n keys with placeholder values (≤0.75). ≥0.85 required.

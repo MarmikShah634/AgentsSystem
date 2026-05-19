@@ -5,7 +5,7 @@ owns:
   - skills/requirements/*
 hands_off_to:
   - architect
-confidence_floor: 0.90
+confidence_floor: 0.85
 sensitive_surfaces: []
 ---
 

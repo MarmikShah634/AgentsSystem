@@ -3,21 +3,67 @@ id: estimate-story-points
 category: sprint
 owner_agent: sprint-planner
 inputs:
-  - stories
+  - stories: "array of {story_id, narrative, ac_ids, notes} from decompose-epic-into-stories"
 outputs:
-  - estimates
+  - estimates: "{per_story: {story_id: points}, reference_map: {points: story_id}}"
+  - rationale: "1-3 sentences citing the anchor story per scale value"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: estimate-story-points
 
-## Task
+## Purpose
+Assign Fibonacci story points (1, 2, 3, 5, 8, 13) to each story relative to an anchor reference. Points reflect complexity + uncertainty + effort, not wall-clock time.
 
-Assign Fibonacci points (1, 2, 3, 5, 8, 13) per story. Document the
-reference story for each point value. No story may exceed 13 — split it
-first.
+## When to invoke
+Invoke when `stories` is populated AND each story has a narrative and AC mapping.
+Do NOT invoke to: estimate plan steps (use estimate-effort), commit to dates, or re-estimate after a story split (re-run after split).
+
+## Procedure (follow exactly)
+1. Choose one story you can size with high confidence as the "3" anchor. Note its story_id.
+2. For each remaining story, compare against the anchor along three dimensions: complexity (logic branches, integrations), uncertainty (unknowns, external deps), effort (surface area).
+3. Pick the closest Fibonacci value. Allowed: 1, 2, 3, 5, 8, 13. No other values.
+4. If a story scores 13 with non-trivial uncertainty, STOP and require a split — never emit 13 for a story flagged as risky in `notes`.
+5. Build the `reference_map` showing one anchor story per used point value.
+6. Emit `per_story` and `reference_map`.
+
+## How to think
+- Story has unknowns ("we'll figure out the API shape") → bump one Fibonacci step.
+- Story is mechanical CRUD only → 1 or 2; never 5+ unless surface area is huge.
+- Two stories feel identical → assign the same value.
+- Story spans two systems → minimum 5.
+
+## Required inputs
+Each story must include narrative and `ac_ids`. Missing → STOP and ask for completed decomposition.
+
+## Output format
+```json
+{"estimates":{
+  "per_story":{"S1":3,"S2":5,"S3":1},
+  "reference_map":{"1":"S3","3":"S1","5":"S2"}},
+ "rationale":"S1 anchored at 3 (CRUD + 1 integration). S2=5 due to external API uncertainty.",
+ "confidence":0.0}
+```
+
+## Quality criteria
+Passes if: every story has a value in {1,2,3,5,8,13}; reference map covers every used value; no risky story sized 13; rationale names the anchor.
+Fails if: any non-Fibonacci value; 13 emitted for a story flagged risky; missing anchor in rationale; missing reference map.
+
+## Common pitfalls
+- Treating points as hours.
+- Using 4, 6, or 7 — forbidden values.
+- Re-using the anchor narrative across all values (the map must show distinct anchors).
+- Hiding uncertainty by sizing optimistically.
+
+## Examples
+✅ Anchor: S1 ("password login") = 3. S2 ("OAuth with Google") = 5 (one external dep). S3 ("logout button") = 1. Map populated.
+❌ Anti-pattern: assigning 13 to "build full payments stack" with notes saying "lots unknown" — must split first.
 
 ## Stop condition
+Every story sized on the Fibonacci scale, reference map present, risky 13s split before emission.
 
-Every story has a point value; reference story map is included.
+## Confidence guidance
+Lower when: no clear anchor (≤0.7), heavy external dependencies (≤0.75), team velocity uncalibrated (≤0.8). ≥0.85 required.

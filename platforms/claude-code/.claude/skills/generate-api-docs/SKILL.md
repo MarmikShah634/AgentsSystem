@@ -3,16 +3,91 @@ id: generate-api-docs
 category: docs
 owner_agent: docs
 inputs:
-  - source_paths
+  - source_paths: "list of source dirs or modules to document"
+  - language: "python|typescript|go|rust|java"
+  - output_dir: "destination dir for generated docs (default: docs/api)"
+  - config_path: "optional tool config path (sphinx conf.py, typedoc.json, etc.)"
 outputs:
-  - api_docs_path
+  - api_docs_path: "path to generated docs entry point"
+  - touched_paths: "list of generated files"
+  - tool_used: "sphinx|typedoc|godoc|rustdoc|javadoc"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: generate-api-docs
 
-## Task
+## Purpose
+Run the language-native API doc generator over `source_paths` and emit the
+entry-point path of the generated site/files. Do not hand-write docs.
 
-Run the language-native doc generator (Sphinx, TypeDoc, godoc, rustdoc,
-javadoc, etc.) over `source_paths` and emit the output path.
+## When to invoke
+Plan step is `generate-api-docs` OR a public API surface (exported
+symbols, package interface) changed AND the project has a doc generator
+configured. Skip for internal-only modules.
+
+## Procedure (follow exactly)
+1. Select tool by `language`:
+   - python → `sphinx-build -b html docs/ <output_dir>` (require existing
+     `conf.py`; do NOT bootstrap one here).
+   - typescript → `typedoc --out <output_dir> <source_paths>`.
+   - go → `go doc` for inspection; for HTML use `godoc -http` or `pkgsite`.
+     For static export: `gomarkdoc ./...` if configured.
+   - rust → `cargo doc --no-deps --target-dir <output_dir>`.
+   - java → `javadoc -d <output_dir> <source_paths>`.
+2. Run from `repo_root`. Capture stderr and surface tool warnings.
+3. Verify the output directory contains the expected entry file (`index.html`,
+   `index.md`, package html).
+4. Return `api_docs_path` pointing at the entry file.
+5. Do NOT commit generated docs unless the project's CI/repo conventions
+   explicitly track them (look for existing committed `docs/api/`).
+
+## How to think
+- Doc generator not installed → STOP, signal missing toolchain.
+- Source paths point to non-public modules → narrow to public surface.
+- Doc build emits warnings (undocumented symbols) → record but do not fail
+  unless `-W` / strict mode is in config.
+- Custom theme / plugins → trust existing config; do not modify it.
+
+## Required inputs
+`source_paths` non-empty; `language` set; `output_dir` writable. If tool
+config is missing for languages that require one (sphinx, typedoc), STOP.
+
+## Output format
+```json
+{
+  "api_docs_path": "docs/api/index.html",
+  "touched_paths": ["docs/api/index.html","docs/api/modules/users.html"],
+  "tool_used": "typedoc",
+  "confidence": 0.92
+}
+```
+
+## Quality criteria
+Pass: tool exited 0; entry file exists; warnings recorded; touched_paths
+limited to `output_dir`; no source files modified.
+Fail: missing entry file, fabricated paths, modifying source code,
+overwriting hand-written docs outside `output_dir`.
+
+## Common pitfalls
+- Running with elevated strict flags the project doesn't use, causing false
+  failures.
+- Including private symbols (e.g. typedoc default includes everything;
+  respect `--excludePrivate`).
+- Writing into `output_dir` that is gitignored without informing the caller.
+- Running godoc as a server (long-lived) instead of static export.
+
+## Examples
+✅ `typedoc --out docs/api src/` produces `docs/api/index.html`;
+api_docs_path = `docs/api/index.html`, tool_used `typedoc`.
+❌ Hand-authoring `docs/api/index.md` from inferred symbols.
+
+## Stop condition
+Tool exited successfully; entry file verified to exist; touched_paths
+enumerated; no source modified.
+
+## Confidence guidance
+Configured tool, clean build ≥0.95; warnings present ≥0.9; missing config
+0.5 (STOP); cross-language project ambiguous ≤0.75. Floor 0.85.

@@ -8,21 +8,95 @@ id: audit-render-performance
 category: perf
 owner_agent: performance-auditor
 inputs:
-  - puppeteer_trace
+  - puppeteer_trace: "path to a Chrome DevTools Performance trace JSON"
+  - budgets: "optional overrides; defaults below"
 outputs:
-  - findings
+  - findings: "list of {metric, measured, budget, severity, path, fix}"
+  - verdict: "pass|block"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.95
 ---
 
 # Skill: audit-render-performance
 
-## Task
+## Purpose
+Analyse a Chrome DevTools Performance trace captured via Puppeteer and
+flag long tasks, layout thrash, and excessive re-renders. Findings
+only. Anti-hallucination: every finding cites a concrete event from
+the trace, not invented timings.
 
-Inspect a Puppeteer Performance trace:
+## When to invoke
+Plan step requests render perf audit AND a valid trace file is
+provided AND the trace covers a representative interaction
+(navigation or key user action).
+Do NOT invoke for: server-side rendering perf, traces shorter than
+1 second, or traces missing the renderer process.
 
-- Long tasks (> 50ms on the main thread).
-- Forced synchronous layouts (layout thrash).
-- > 30 components re-rendering per interaction.
+## Procedure (follow exactly)
+1. Parse the trace JSON (DevTools `traceEvents` array).
+2. Long tasks (main thread): every event with `dur > 50000` (µs).
+   Default budget: 0 long tasks above 50 ms during the critical path.
+3. Forced synchronous layouts (layout thrash): occurrences of
+   `Layout` or `UpdateLayoutTree` triggered inside JS execution
+   (i.e. nested under a `FunctionCall`/`v8.run` frame). Default
+   budget: 0.
+4. Re-render storm: count React commits or component renders
+   (heuristic: `Profile` events or `User Timing` marks if app uses
+   React DevTools profiler integration). Budget: ≤ 30 components
+   per interaction.
+5. Time to interactive on the trace's main navigation: budget 3.5 s
+   on the captured throttling profile.
+6. For each violation emit a finding with: metric name, measured
+   value, budget, the offending stack/event name, and a concrete fix
+   (debounce, virtualize, memo, move to worker, defer non-critical).
 
-Flag each with the offending stack and a fix suggestion.
+## How to think
+- Throttling profile matters — record it from trace metadata; if
+  absent, lower confidence.
+- A single 80 ms task during idle is less critical than a 60 ms task
+  during input — weight severity by phase.
+- Memoization advice requires evidence of repeated equal props;
+  otherwise suggest profiling, not a code change.
+- Devtools extension noise in trace → exclude renderer events from
+  `chrome-extension://` origins.
+
+## Required inputs
+Trace JSON readable; covers the period under audit.
+
+## Output format
+```json
+{"findings": [
+   {"metric": "long_task_ms", "measured": 312, "budget": 50,
+    "severity": "error", "path": "FunctionCall:renderList",
+    "fix": "Virtualize list (react-window) or chunk via requestIdleCallback."}],
+ "verdict": "block", "confidence": 0.96}
+```
+
+## Quality criteria
+Pass: every long task ≥ 50 ms enumerated; layout thrash counted with
+trigger stacks; re-render storms flagged with component names where
+available; verdict matches severity.
+Fail: summarising without per-event evidence; ignoring the throttling
+profile; inventing budgets not from defaults or input.
+
+## Common pitfalls
+- Counting compositor or GPU thread tasks as main-thread long tasks.
+- Confusing `RecalculateStyles` with `Layout`.
+- Reporting "many renders" without a count.
+- Suggesting `React.memo` everywhere without diagnosis.
+
+## Examples
+Pass: trace shows max main-thread task 38 ms, no layout thrash,
+verdict `pass`.
+Fail: 312 ms `renderList` task with nested layouts → finding emitted
+suggesting virtualization.
+
+## Stop condition
+Every relevant trace event examined; findings emitted with measured
+values; verdict set; no source modified.
+
+## Confidence guidance
+Trace clean + throttling known = 0.97; throttling unknown ≤0.92;
+re-render counting heuristic only ≤0.88. Must be ≥0.95 to emit.

@@ -8,17 +8,100 @@ id: rollback
 category: deploy
 owner_agent: deployer
 inputs:
-  - environment
-  - rollback_ref
+  - environment: "dev|staging|prod"
+  - rollback_ref: "release id or revision to restore (from deploy-environment output)"
+  - reason: "1-2 sentence reason for the rollback (audit trail)"
+  - approval_token: "required for prod; opaque token issued by human"
 outputs:
-  - restored_release_id
+  - restored_release_id: "id of the release that is now active"
+  - prior_release_id: "id of the failing release being replaced"
+  - tool_used: "kubectl|helm|terraform|ecs|gcloud|fly|..."
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.95
 ---
 
 # Skill: rollback
 
-## Task
+## Purpose
+Restore `environment` to a known-good `rollback_ref`. ALWAYS human-gated.
+ALWAYS records reason for audit trail.
 
-Roll back `environment` to `rollback_ref`. ALWAYS human-gated. Emit the
-restored release id.
+## When to invoke
+Plan step is `rollback` OR an active incident requires reverting a recent
+deploy. `rollback_ref` MUST come from a prior `deploy-environment` output.
+
+## Procedure (follow exactly)
+1. Verify `approval_token` is present and valid for `environment`. Missing
+   for prod → STOP.
+2. Verify `rollback_ref` exists in the deployment history of `environment`:
+   - kubectl → `kubectl rollout history deployment/<name>`
+   - helm → `helm history <release>`
+   - ecs → describe service revisions
+   - fly → `flyctl releases`
+   Not found → STOP.
+3. Record currently active release as `prior_release_id`.
+4. Execute rollback using native command:
+   - kubectl → `kubectl rollout undo deployment/<name> --to-revision=<n>`
+   - helm → `helm rollback <release> <revision>`
+   - ecs → update service to prior taskDefinition arn
+   - fly → `flyctl deploy --image <prior_image>` or `flyctl releases revert`
+5. Wait for readiness (same checks as `deploy-environment`).
+6. Run health check on `/healthz` (or configured endpoint).
+7. If the failing deploy included a DB migration that is incompatible with
+   `rollback_ref`'s schema, STOP — do not roll back app code without first
+   reverting the migration via a separate explicit step.
+8. Emit `restored_release_id`, `prior_release_id`, `tool_used`, and log
+   `reason`.
+
+## How to think
+- Rollback target older than retention window → STOP; image/manifest may
+  be unavailable.
+- Multiple services involved in the incident → roll back each via separate
+  invocations; do not bundle.
+- Config or secret change since `rollback_ref` → flag; rolling back code
+  without matching config may break.
+- Schema migration was destructive (dropped columns) → STOP unless paired
+  rollback migration is approved.
+
+## Required inputs
+All four non-empty. `reason` ≥ 1 sentence — required for audit log.
+
+## Output format
+```json
+{
+  "restored_release_id": "myapp.v22",
+  "prior_release_id": "myapp.v23",
+  "tool_used": "helm",
+  "confidence": 0.97
+}
+```
+
+## Quality criteria
+Pass: approval recorded; rollback_ref verified in history; readiness and
+health green; both release ids recorded; reason logged.
+Fail: rolling back across an incompatible migration, skipping readiness
+check, missing approval for prod, ambiguous rollback_ref.
+
+## Common pitfalls
+- Assuming `helm rollback` reverts DB migrations — it does not.
+- Picking the wrong revision number (off-by-one in history listings).
+- Rolling back to a revision that referenced an image that has since been
+  garbage-collected from the registry.
+- Forgetting to communicate the rollback (out of scope here, but flag it).
+
+## Examples
+✅ `helm rollback myapp 22` → restored_release_id `myapp.v22`,
+prior_release_id `myapp.v23`, reason logged.
+❌ `kubectl rollout undo` issued but readiness not verified; pods still
+CrashLoopBackOff — should not return success.
+
+## Stop condition
+Approval verified; rollback_ref exists; rollback applied; readiness +
+health green; release ids recorded; reason in audit log.
+
+## Confidence guidance
+Recent rollback_ref, no schema incompatibility, health green ≥0.97;
+older ref or config drift ≤0.9 (escalate); prod without approval STOP.
+Floor 0.95.

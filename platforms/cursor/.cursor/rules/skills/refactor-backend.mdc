@@ -8,23 +8,83 @@ id: refactor-backend
 category: backend
 owner_agent: backend
 inputs:
-  - target_paths
-  - refactor_goal
+  - target_paths: "list of server-tier files to refactor"
+  - refactor_goal: "concrete intent, e.g. extract repository, rename internal helper"
+  - invariants: "behaviors that must not change (HTTP contract, DB schema, perf budget)"
 outputs:
-  - patch
+  - patch: "unified diff of changes"
+  - touched_paths: "list of files modified"
+  - rationale: "1-3 sentences"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: refactor-backend
 
-## Task
+## Purpose
+Apply a behavior-preserving change to server-tier code. The public API surface (HTTP routes, request/response schemas, DB schema, message contracts) must be byte-identical before and after.
 
-Behaviour-preserving change limited to server-tier paths. Public API
-surface (HTTP routes + request/response schemas) must not change.
+## When to invoke
+Invoke when the plan step is refactor and `target_paths` are all under server tier (routes/, services/, repositories/, models/, infra/) AND integration tests cover every touched endpoint. Reject if any target is UI-tier, if any test is currently red, or if `invariants` is empty.
 
-## Do NOT
+## Procedure (follow exactly)
+1. Confirm every path in `target_paths` is server-tier. If any UI file, STOP.
+2. Run the full integration test + contract test suite. Capture baseline. If anything is red before changes, STOP — refactoring a red tree is forbidden.
+3. Apply the smallest change that achieves `refactor_goal`. Allowed examples:
+   - Extract repository from a service that held SQL inline.
+   - Split a fat service into two by domain seam.
+   - Rename an internal helper.
+   - Reorganize files under a directory without changing imports outside the package.
+4. Forbidden: changing endpoint URLs, HTTP methods, request/response schemas, status codes, DB column names/types, message-bus topics, or env-var names. If any of those would change, STOP — that is a breaking change.
+5. Re-run all tests. Diff in HTTP/contract tests must be zero.
+6. Do not bump dependencies, do not add libraries, do not "modernize" unrelated code.
 
-- Change endpoint URLs, methods, or schemas.
-- Touch UI-tier files.
-- Add libraries.
+## How to think
+- Refactor goal vague ("clean up") → STOP and ask for a concrete invariant.
+- Tempted to also fix a nearby bug → don't; emit a follow-up `fix-backend-bug` step.
+- Touching a model file → ensure NO column rename leaks to the DB — those need migrations.
+
+## Required inputs
+All three fields non-empty. `invariants` must include at minimum "HTTP contract unchanged" and "DB schema unchanged".
+
+## Output format
+{"patch": "unified diff", "touched_paths": ["src/services/user_service.py", "src/repositories/user_repo.py"], "rationale": "1-3 sentences", "confidence": 0.0}
+
+## Quality criteria
+Passes if: every integration/contract test still green; OpenAPI/JSON schema diff is empty; DB schema diff is empty; no new dependency; no UI-tier file touched.
+Fails if: alters request/response shape; alters status codes; renames a DB column without migration; adds a library; reformats whole files.
+
+## Common pitfalls
+- Renaming a Pydantic field "for clarity" — that changes the response shape. Forbidden.
+- Replacing the HTTP client with `httpx` because it's "nicer". New dependency, forbidden.
+- Inlining a service back into a handler. Layer violation.
+
+## Examples
+Extract repository:
+```python
+# before: UserService had session + SELECT inline
+# after:
+class UserRepository:
+    def __init__(self, session: AsyncSession): self.session = session
+    async def by_email(self, email: str) -> User | None:
+        return (await self.session.execute(select(User).where(User.email == email))).scalar_one_or_none()
+
+class UserService:
+    def __init__(self, repo: UserRepository): self.repo = repo
+    async def get_by_email(self, email): return await self.repo.by_email(email)
+```
+
+Anti-pattern:
+```python
+# "refactor" that renames a JSON response field — breaking
+class UserOut(BaseModel):
+    displayName: str    # was `display_name` — wire contract changed
+```
+
+## Stop condition
+All tests green; OpenAPI diff empty; DB schema diff empty; `touched_paths` ⊆ `target_paths` (plus any new repository file under the existing package).
+
+## Confidence guidance
+Lower when: test coverage thin (≤0.7), goal vague (≤0.7), seam unclear (≤0.75), contract tests missing (≤0.6). Floor 0.85 to proceed.
