@@ -1,0 +1,35 @@
+---
+id: score-prd-readiness
+category: prd
+owner_agent: prd-reviewer
+inputs:
+  - findings
+outputs:
+  - readiness_score
+  - verdict
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: score-prd-readiness
+
+## Task
+
+Aggregate findings into a 0.0–1.0 readiness score and a `pass|revise`
+verdict.
+
+## Scoring
+
+```
+score = 1.0
+  - 0.20 per `missing`
+  - 0.15 per `conflicting`
+  - 0.10 per `untestable`
+  - 0.05 per `ambiguous`
+floor at 0.0
+verdict = "pass" if score >= 0.85 else "revise"
+```
+
+## Stop condition
+
+Output includes numeric score, verdict, and the formula trace.

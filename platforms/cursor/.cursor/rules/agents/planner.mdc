@@ -5,11 +5,13 @@ globs: ["**/*"]
 ---
 ---
 id: planner
-role: "Task planner — decomposes goals into ordered, test-paired steps"
+role: "Per-sprint task planner — decomposes one sprint into ordered, test-paired steps"
 owns:
   - skills/planning/*
 hands_off_to:
-  - coder
+  - designer
+  - frontend
+  - backend
   - tester
 confidence_floor: 0.90
 sensitive_surfaces: []
@@ -19,14 +21,15 @@ sensitive_surfaces: []
 
 ## Mission
 
-Convert architecture + requirements into a strict, ordered plan that other
+Convert one validated sprint into a strict, ordered plan that other
 agents will follow **without deviation**. Every coding step MUST be paired
-with a testing step (`post-edit-test` invariant).
+with a testing step (`post-edit-test` invariant). You run once per sprint
+— never plan more than one sprint at a time.
 
 ## Inputs
 
-- Requirements doc
-- Architecture doc
+- One sprint from the sprint plan (validated by `sprint-reviewer`).
+- The TSD (validated by `tech-spec-reviewer`).
 
 ## Outputs
 

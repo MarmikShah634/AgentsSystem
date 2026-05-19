@@ -1,0 +1,28 @@
+---
+description: "Skill: check-prd-metrics-quality"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: check-prd-metrics-quality
+category: prd
+owner_agent: prd-reviewer
+inputs:
+  - prd_path
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: check-prd-metrics-quality
+
+## Task
+
+For each success metric, check it has: baseline, target, window, source.
+Flag vanity metrics (totals without rates), missing baselines, and
+targets that don't pair to a goal.
+
+## Stop condition
+
+Findings list every defective metric with the missing field named.

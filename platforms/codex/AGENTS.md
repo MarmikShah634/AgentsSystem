@@ -17,6 +17,35 @@ running through the Codex CLI in this repository.
 
 ## Agents
 
+### Agent: accessibility-auditor
+
+    
+    # Accessibility Auditor Agent
+    
+    ## Mission
+    
+    Audit UI surfaces against WCAG 2.2 AA. You emit findings; `frontend`
+    applies fixes. Separate from `designer` because a11y is conformance, not
+    taste.
+    
+    ## Outputs
+    
+    ```json
+    {
+      "findings": [
+        {"wcag": "1.4.3", "severity": "info|warn|error", "path": "...",
+         "msg": "...", "fix": "..."}
+      ],
+      "verdict": "pass|block",
+      "confidence": 0.0
+    }
+    ```
+    
+    ## Constraints
+    
+    - Any `error` finding blocks the plan.
+    - Always run all five audit skills — partial audit is not an audit.
+
 ### Agent: architect
 
     
@@ -344,6 +373,36 @@ running through the Codex CLI in this repository.
     
     Python module: `orchestrator/infra/stack_detector.py`.
 
+### Agent: performance-auditor
+
+    
+    # Performance Auditor Agent
+    
+    ## Mission
+    
+    Quantitative performance gates. Each skill compares a measurement to a
+    budget from the TSD (or sensible defaults) and emits findings.
+    
+    ## Outputs
+    
+    ```json
+    {
+      "findings": [
+        {"metric": "LCP|CLS|TTFB|bundle_kb|fps",
+         "measured": 0, "budget": 0, "severity": "info|warn|error",
+         "path": "...", "fix": "..."}
+      ],
+      "verdict": "pass|block",
+      "confidence": 0.0
+    }
+    ```
+    
+    ## Constraints
+    
+    - Any `error` finding blocks the plan.
+    - Source budgets from the TSD's observability spec; fall back to defaults
+      only if no budget is declared.
+
 ### Agent: planner
 
     
@@ -351,14 +410,15 @@ running through the Codex CLI in this repository.
     
     ## Mission
     
-    Convert architecture + requirements into a strict, ordered plan that other
+    Convert one validated sprint into a strict, ordered plan that other
     agents will follow **without deviation**. Every coding step MUST be paired
-    with a testing step (`post-edit-test` invariant).
+    with a testing step (`post-edit-test` invariant). You run once per sprint
+    — never plan more than one sprint at a time.
     
     ## Inputs
     
-    - Requirements doc
-    - Architecture doc
+    - One sprint from the sprint plan (validated by `sprint-reviewer`).
+    - The TSD (validated by `tech-spec-reviewer`).
     
     ## Outputs
     
@@ -373,6 +433,71 @@ running through the Codex CLI in this repository.
     - Mark any step that touches sensitive surfaces with `human_gate: true`.
     - If you cannot produce a plan above 0.90 confidence, emit a partial plan
       and escalate.
+
+### Agent: prd-author
+
+    
+    # PRD Author Agent
+    
+    ## Mission
+    
+    Convert raw stakeholder input (chat transcripts, briefs, voice notes) into
+    a complete Product Requirements Document. You compose section by section
+    using one skill per section — never write a full PRD in a single pass.
+    
+    ## Inputs
+    
+    - Raw stakeholder input (text).
+    - Output of the `requirements` agent (lightweight user-story capture).
+    - Optional `PRODUCT.md` / `DESIGN.md` for project context.
+    
+    ## Outputs
+    
+    A PRD document at `docs/prd/<slug>.md` assembled from per-section drafts.
+    
+    ## Constraints
+    
+    - Never invent stakeholder intent — when uncertain, lower confidence and
+      list questions in `open_questions`.
+    - Never write code, schemas, or implementation detail (that's the
+      `tech-spec-author`'s job).
+    - Always end by invoking `assemble-prd` to stitch sections together.
+    - Hand off to `prd-reviewer` before any downstream agent uses the PRD.
+
+### Agent: prd-reviewer
+
+    
+    # PRD Reviewer Agent
+    
+    ## Mission
+    
+    Independent gap analysis of a PRD. You never rewrite — you emit findings
+    and a readiness score. Floor confidence is 0.95 because a missed gap
+    propagates into TSDs and code.
+    
+    ## Inputs
+    
+    - A PRD document path.
+    
+    ## Outputs
+    
+    ```json
+    {
+      "findings": [
+        {"section": "...", "kind": "missing|ambiguous|conflicting|untestable",
+         "msg": "...", "fix": "..."}
+      ],
+      "readiness_score": 0.0,
+      "verdict": "pass|revise",
+      "confidence": 0.0
+    }
+    ```
+    
+    ## Constraints
+    
+    - `readiness_score < 0.85` → `verdict: revise` → hand back to `prd-author`.
+    - Never propose product decisions — only flag gaps.
+    - Always run all six review skills; partial review is not a review.
 
 ### Agent: requirements
 
@@ -479,6 +604,134 @@ running through the Codex CLI in this repository.
     - Any `severity: critical` is an instant `block`.
     - Always escalate `block` to the human.
 
+### Agent: sprint-planner
+
+    
+    # Sprint Planner Agent
+    
+    ## Mission
+    
+    Group PRD requirements into epics, break epics into stories, estimate, and
+    sequence stories into sprints with explicit sprint goals. You do NOT
+    decompose stories into per-skill task lists — that's the `planner` agent's
+    job, one sprint at a time.
+    
+    ## Inputs
+    
+    - Validated PRD.
+    - Validated TSD.
+    
+    ## Outputs
+    
+    A sprint plan at `docs/sprints/<release>.md`:
+    
+    ```yaml
+    sprints:
+      - id: S1
+        goal: "..."
+        stories: [STORY-1, STORY-2, ...]
+        points: 21
+    ```
+    
+    ## Constraints
+    
+    - Sprint points must fit a 2-week velocity (default 25; override via
+      `velocity` input).
+    - Every sprint must have exactly one goal.
+    - Cross-sprint dependencies must be explicit and acyclic.
+    - Hand off to `sprint-reviewer` before `planner` consumes any sprint.
+
+### Agent: sprint-reviewer
+
+    
+    # Sprint Reviewer Agent
+    
+    ## Mission
+    
+    Gap-check the sprint plan. Catch over-stuffed sprints, dependency cycles,
+    and incoherent sprint goals before any task-level planning begins.
+    
+    ## Outputs
+    
+    ```json
+    {
+      "findings": [
+        {"sprint_id": "S1", "kind": "overcommitted|cyclic|incoherent",
+         "msg": "...", "fix": "..."}
+      ],
+      "readiness_score": 0.0,
+      "verdict": "pass|revise",
+      "confidence": 0.0
+    }
+    ```
+
+### Agent: tech-spec-author
+
+    
+    # Tech Spec Author Agent
+    
+    ## Mission
+    
+    Translate the validated PRD + architecture into a Technical Specification
+    Document that the `frontend` and `backend` agents must implement against
+    verbatim. The TSD is the contract; coding agents have no licence to
+    deviate from it.
+    
+    ## Inputs
+    
+    - Validated PRD (post `prd-reviewer pass`).
+    - Architecture doc from `architect`.
+    
+    ## Outputs
+    
+    A TSD at `docs/tsd/<slug>.md` assembled from per-section drafts:
+    
+    1. Overview (cross-references PRD goals).
+    2. Component contracts (per component: inputs / outputs / invariants).
+    3. Data contracts (entities, schemas, validation rules).
+    4. API contracts (endpoint signatures, status codes, examples).
+    5. Error model (taxonomy + propagation rules).
+    6. Observability spec (metrics, logs, traces).
+    7. Rollout plan (flags, canaries, kill switch).
+    
+    ## Constraints
+    
+    - Every contract MUST be precise enough for an agent to implement without
+      asking follow-ups. Otherwise lower confidence.
+    - Never include code — contracts are signatures + invariants + examples.
+    - Always run `assemble-tsd` last.
+
+### Agent: tech-spec-reviewer
+
+    
+    # Tech Spec Reviewer Agent
+    
+    ## Mission
+    
+    Gap-check the TSD before any coding starts. A coding agent should be able
+    to implement each contract by reading only the TSD — no implicit
+    knowledge, no missing schemas, no contradictory invariants.
+    
+    ## Outputs
+    
+    ```json
+    {
+      "findings": [
+        {"section": "...", "kind": "incomplete|inconsistent|unimplementable",
+         "msg": "...", "fix": "..."}
+      ],
+      "readiness_score": 0.0,
+      "verdict": "pass|revise",
+      "confidence": 0.0
+    }
+    ```
+    
+    ## Constraints
+    
+    - `readiness_score < 0.90` → `verdict: revise`.
+    - Cross-check every API contract against the data contracts.
+    - Cross-check every error in the error model against where it can be raised.
+
 ### Agent: tester
 
     
@@ -520,6 +773,81 @@ running through the Codex CLI in this repository.
     - Never mark a step `ok` if any test failed.
 
 ## Skills
+
+### Skill: audit-aria-labels
+
+    
+    # Skill: audit-aria-labels
+    
+    ## Task
+    
+    WCAG 2.2 4.1.2. For every interactive element verify accessible name:
+    
+    - `<button>` has text content OR `aria-label`/`aria-labelledby`.
+    - `<input>` has a `<label for>` OR `aria-label`.
+    - `<img>` has `alt` (empty for decorative).
+    - Icon-only buttons MUST have `aria-label`.
+    
+    Flag any missing or duplicate accessible names.
+
+### Skill: audit-color-contrast
+
+    
+    # Skill: audit-color-contrast
+    
+    ## Task
+    
+    WCAG 2.2 1.4.3/1.4.11. For every text-on-background pair:
+    
+    - Body text: contrast ≥ 4.5:1.
+    - Large text (≥18pt or 14pt bold): ≥ 3:1.
+    - UI components & graphical objects: ≥ 3:1.
+    
+    Use the project's tokens; flag any failing pair with `wcag: "1.4.3"` and
+    both colours + measured ratio.
+
+### Skill: audit-focus-management
+
+    
+    # Skill: audit-focus-management
+    
+    ## Task
+    
+    WCAG 2.2 2.4.7/2.4.11. Verify:
+    
+    - Visible focus indicator on every focusable element (≥2px outline).
+    - Focus moves to opened dialogs / drawers; returns on close.
+    - No focus trap outside modal contexts.
+    - `outline: none` is only allowed when paired with a custom focus style.
+
+### Skill: audit-keyboard-navigation
+
+    
+    # Skill: audit-keyboard-navigation
+    
+    ## Task
+    
+    WCAG 2.2 2.1.1/2.4.3. Verify every interactive element is reachable AND
+    operable via keyboard alone. Tab order must follow visual reading order.
+    Flag any:
+    
+    - Element with `onClick` but no `onKeyDown` equivalent.
+    - Custom widget without an ARIA role + keyboard handlers.
+    - Tab order regression vs. visual order.
+
+### Skill: audit-screen-reader-flow
+
+    
+    # Skill: audit-screen-reader-flow
+    
+    ## Task
+    
+    WCAG 2.2 1.3.1/4.1.3. Validate semantic structure:
+    
+    - One `<h1>` per page; heading hierarchy unbroken.
+    - Landmarks present: `<main>`, `<nav>`, `<header>`, `<footer>`.
+    - Dynamic regions use `aria-live`.
+    - Decorative elements set `aria-hidden="true"`.
 
 ### Skill: design-data-model
 
@@ -1096,6 +1424,59 @@ running through the Codex CLI in this repository.
     Topologically order `steps` by `depends_on`. Raise `PlanInvariantError`
     on cycle.
 
+### Skill: audit-bundle-size
+
+    
+    # Skill: audit-bundle-size
+    
+    ## Task
+    
+    Measure gzipped bundle size from the build output (Vite/webpack stats,
+    `dist/` size, etc.). Compare to `budget_kb` (default 250 for initial
+    JS, 50 for initial CSS). Flag every entry-chunk over budget with the
+    top contributors.
+
+### Skill: audit-core-web-vitals
+
+    
+    # Skill: audit-core-web-vitals
+    
+    ## Task
+    
+    Collect LCP, INP, CLS, TTFB from a Puppeteer run. Compare to budgets
+    (default: LCP ≤ 2.5s, INP ≤ 200ms, CLS ≤ 0.1, TTFB ≤ 800ms). Flag any
+    metric over budget with the affected URL.
+
+### Skill: audit-network-waterfall
+
+    
+    # Skill: audit-network-waterfall
+    
+    ## Task
+    
+    Parse a HAR file and flag:
+    
+    - > 50 requests on initial load.
+    - > 1 MB transferred above the fold.
+    - Render-blocking requests > 3.
+    - Sequential requests that could be parallelised.
+    - Missing cache headers on static assets.
+
+### Skill: audit-render-performance
+
+    
+    # Skill: audit-render-performance
+    
+    ## Task
+    
+    Inspect a Puppeteer Performance trace:
+    
+    - Long tasks (> 50ms on the main thread).
+    - Forced synchronous layouts (layout thrash).
+    - > 30 components re-rendering per interaction.
+    
+    Flag each with the offending stack and a fix suggestion.
+
 ### Skill: decompose-task
 
     
@@ -1135,6 +1516,282 @@ running through the Codex CLI in this repository.
     ## Task
     
     Topologically order plan steps. Fail if a cycle is detected.
+
+### Skill: assemble-prd
+
+    
+    # Skill: assemble-prd
+    
+    ## Task
+    
+    Stitch the section drafts into `docs/prd/<slug>.md` in this fixed order:
+    
+    1. Executive Summary
+    2. Problem Statement
+    3. Goals & Non-Goals
+    4. User Personas
+    5. Functional Requirements
+    6. Non-Functional Requirements
+    7. Success Metrics
+    8. Out of Scope
+    9. Open Questions
+    
+    ## Stop condition
+    
+    All nine headings present; file parses as valid Markdown; no unresolved
+    `<...>` placeholders.
+
+### Skill: check-prd-ambiguity
+
+    
+    # Skill: check-prd-ambiguity
+    
+    ## Task
+    
+    Scan for ambiguous quantifiers and pronouns: "some", "many", "appropriate",
+    "reasonable", "etc.", "and so on", "it", "they" without a referent.
+    
+    ## Stop condition
+    
+    Findings list every ambiguous phrase with a clarification question.
+
+### Skill: check-prd-completeness
+
+    
+    # Skill: check-prd-completeness
+    
+    ## Task
+    
+    Verify the PRD has all nine required sections (see `assemble-prd`) and
+    each is non-empty. Flag empty/skeleton sections as `missing`.
+    
+    ## Stop condition
+    
+    Findings list every missing or empty section by name.
+
+### Skill: check-prd-conflicts
+
+    
+    # Skill: check-prd-conflicts
+    
+    ## Task
+    
+    Detect contradictions between sections — e.g. a goal that contradicts a
+    non-goal, an FR that contradicts an NFR (perf vs. completeness), a
+    persona constraint that contradicts an FR.
+    
+    ## Stop condition
+    
+    Findings list every conflicting pair with both citations.
+
+### Skill: check-prd-metrics-quality
+
+    
+    # Skill: check-prd-metrics-quality
+    
+    ## Task
+    
+    For each success metric, check it has: baseline, target, window, source.
+    Flag vanity metrics (totals without rates), missing baselines, and
+    targets that don't pair to a goal.
+    
+    ## Stop condition
+    
+    Findings list every defective metric with the missing field named.
+
+### Skill: check-prd-testability
+
+    
+    # Skill: check-prd-testability
+    
+    ## Task
+    
+    Each FR and NFR must be testable. Flag any that:
+    
+    - Uses adjectives without numbers ("fast", "intuitive").
+    - Lacks an observable trigger.
+    - Refers to internal state with no external symptom.
+    
+    ## Stop condition
+    
+    Findings list every untestable requirement with a concrete rewrite.
+
+### Skill: score-prd-readiness
+
+    
+    # Skill: score-prd-readiness
+    
+    ## Task
+    
+    Aggregate findings into a 0.0–1.0 readiness score and a `pass|revise`
+    verdict.
+    
+    ## Scoring
+    
+    ```
+    score = 1.0
+      - 0.20 per `missing`
+      - 0.15 per `conflicting`
+      - 0.10 per `untestable`
+      - 0.05 per `ambiguous`
+    floor at 0.0
+    verdict = "pass" if score >= 0.85 else "revise"
+    ```
+    
+    ## Stop condition
+    
+    Output includes numeric score, verdict, and the formula trace.
+
+### Skill: write-executive-summary
+
+    
+    # Skill: write-executive-summary
+    
+    ## Task
+    
+    Draft exactly one paragraph (≤120 words) summarising what is being built,
+    for whom, and why now. No goals, no metrics, no scope — just the elevator.
+    
+    ## Stop condition
+    
+    Output is a single paragraph; word count ≤120; mentions audience + value
+    + urgency.
+
+### Skill: write-functional-requirements
+
+    
+    # Skill: write-functional-requirements
+    
+    ## Task
+    
+    Numbered FR-1, FR-2, … each in the form:
+    
+    > The system SHALL **\<observable behaviour\>** when **\<trigger\>**.
+    
+    One behaviour per FR. No "should" — only "shall". No implementation hints.
+    
+    ## Stop condition
+    
+    Every goal maps to at least one FR; every persona's primary job maps to
+    at least one FR.
+
+### Skill: write-goals-and-non-goals
+
+    
+    # Skill: write-goals-and-non-goals
+    
+    ## Task
+    
+    Emit two bulleted lists:
+    
+    - **Goals** — observable outcomes the release MUST achieve.
+    - **Non-Goals** — explicitly out-of-scope outcomes that look adjacent.
+    
+    Every goal starts with a verb. Every non-goal explains why it's deferred.
+    
+    ## Stop condition
+    
+    Goals list is non-empty; non-goals list is non-empty (silence on non-goals
+    implies "anything goes" and that's wrong).
+
+### Skill: write-non-functional-requirements
+
+    
+    # Skill: write-non-functional-requirements
+    
+    ## Task
+    
+    Numbered NFR-1, NFR-2, … covering at minimum:
+    
+    - Performance (latency, throughput targets)
+    - Scalability (peak load assumption)
+    - Security & privacy (data classes, retention)
+    - Availability (SLO)
+    - Accessibility (WCAG level)
+    - Compliance (relevant regs)
+    
+    Each NFR is a single measurable claim.
+    
+    ## Stop condition
+    
+    All six categories appear; no claim uses subjective adjectives ("fast",
+    "secure", "scalable") without a number.
+
+### Skill: write-out-of-scope
+
+    
+    # Skill: write-out-of-scope
+    
+    ## Task
+    
+    Enumerate explicit out-of-scope items reviewers might assume are in
+    scope. Each item has a one-line rationale ("deferred to vNext", "covered
+    by feature X", "not legal yet").
+    
+    ## Stop condition
+    
+    At least three items; no item duplicates non-goals.
+
+### Skill: write-problem-statement
+
+    
+    # Skill: write-problem-statement
+    
+    ## Task
+    
+    State the problem in the form:
+    
+    > Today, **\<users\>** struggle to **\<job\>** because **\<root cause\>**.
+    > This results in **\<measurable harm\>**.
+    
+    One sentence. No solution language.
+    
+    ## Stop condition
+    
+    Output contains all four `<...>` slots filled with concrete content.
+
+### Skill: write-success-metrics
+
+    
+    # Skill: write-success-metrics
+    
+    ## Task
+    
+    For each goal, name 1–2 metrics with: current baseline, target value,
+    measurement window, instrumentation source. No vanity metrics.
+    
+    ## Format
+    
+    ```
+    - Goal: <goal>
+      - Metric: <name>
+      - Baseline: <value (date)>
+      - Target: <value (window)>
+      - Source: <event / dashboard / query>
+    ```
+    
+    ## Stop condition
+    
+    Every goal has at least one metric; every metric has all four fields
+    populated.
+
+### Skill: write-user-personas
+
+    
+    # Skill: write-user-personas
+    
+    ## Task
+    
+    For each distinct user type, emit:
+    
+    - Name (role label, not a person)
+    - Primary jobs-to-be-done (1–3 bullets)
+    - Constraints (device, context, expertise)
+    - One illustrative scenario
+    
+    ## Stop condition
+    
+    At least one persona; every persona has all four fields.
 
 ### Skill: extract-acceptance-criteria
 
@@ -1250,6 +1907,139 @@ running through the Codex CLI in this repository.
     project's native tool if present (semgrep, bandit, gosec, etc.); else
     checklist-based review.
 
+### Skill: assign-sprint-goals
+
+    
+    # Skill: assign-sprint-goals
+    
+    ## Task
+    
+    Write one sentence per sprint stating what is shippable at end-of-sprint
+    that wasn't before. No vague goals ("make progress on X"), no
+    multi-clause goals joined by "and".
+    
+    ## Stop condition
+    
+    Every sprint has exactly one single-clause goal.
+
+### Skill: check-sprint-balance
+
+    
+    # Skill: check-sprint-balance
+    
+    ## Task
+    
+    Flag sprints that are:
+    
+    - Over-committed (points > velocity).
+    - Under-committed (points < 0.6 × velocity).
+    - Dominated by one risky story (single story > 50% of sprint).
+
+### Skill: check-sprint-dependencies
+
+    
+    # Skill: check-sprint-dependencies
+    
+    ## Task
+    
+    Detect cross-sprint cycles and stories that depend on later sprints.
+    Flag any dependency that crosses more than two sprints (likely incorrect
+    slicing).
+
+### Skill: check-sprint-goal-coherence
+
+    
+    # Skill: check-sprint-goal-coherence
+    
+    ## Task
+    
+    Flag a sprint when its goal does not describe a deliverable, or when
+    ≥30% of the sprint's stories don't contribute to the stated goal.
+
+### Skill: decompose-epic-into-stories
+
+    
+    # Skill: decompose-epic-into-stories
+    
+    ## Task
+    
+    Break one epic into stories in "As a / I want / So that" form. Each
+    story:
+    
+    - Maps to ≥1 acceptance criterion.
+    - Is independently shippable.
+    - Fits into a single sprint (no story crosses sprint boundaries).
+    
+    ## Stop condition
+    
+    Every acceptance criterion has a story; no story exceeds 13 points.
+
+### Skill: estimate-story-points
+
+    
+    # Skill: estimate-story-points
+    
+    ## Task
+    
+    Assign Fibonacci points (1, 2, 3, 5, 8, 13) per story. Document the
+    reference story for each point value. No story may exceed 13 — split it
+    first.
+    
+    ## Stop condition
+    
+    Every story has a point value; reference story map is included.
+
+### Skill: group-prd-into-epics
+
+    
+    # Skill: group-prd-into-epics
+    
+    ## Task
+    
+    Cluster PRD FRs into 3–8 epics. Each epic must:
+    
+    - Map to one persona or one workflow.
+    - Have a name in noun form ("Auth", "Checkout").
+    - List its constituent FR ids.
+    
+    ## Stop condition
+    
+    Every FR appears in exactly one epic.
+
+### Skill: score-sprint-plan-quality
+
+    
+    # Skill: score-sprint-plan-quality
+    
+    ## Task
+    
+    Aggregate sprint findings into 0.0–1.0.
+    
+    ```
+    score = 1.0
+      - 0.20 per cyclic dependency
+      - 0.15 per over-committed sprint
+      - 0.10 per incoherent goal
+    verdict = "pass" if score >= 0.85 else "revise"
+    ```
+
+### Skill: sequence-sprints
+
+    
+    # Skill: sequence-sprints
+    
+    ## Task
+    
+    Pack stories into sprints respecting:
+    
+    - Sum(story_points) ≤ `velocity` (default 25).
+    - Dependency order (DAG).
+    - Earliest finish for dependency-blocked stories.
+    
+    ## Stop condition
+    
+    No sprint over-committed; no dependency violated; no story orphaned.
+
 ### Skill: analyze-coverage
 
     
@@ -1330,6 +2120,223 @@ running through the Codex CLI in this repository.
     {"passed": 0, "failed": 0, "skipped": 0, "duration_ms": 0,
      "log_tail": "last 50 lines on failure"}
     ```
+
+### Skill: assemble-tsd
+
+    
+    # Skill: assemble-tsd
+    
+    ## Task
+    
+    Stitch sections into `docs/tsd/<slug>.md` in this fixed order:
+    
+    1. Overview
+    2. Component Contracts
+    3. Data Contracts
+    4. API Contracts
+    5. Error Model
+    6. Observability
+    7. Rollout Plan
+    
+    ## Stop condition
+    
+    All seven headings present; no `<...>` placeholders; PRD cross-links
+    resolve.
+
+### Skill: check-tsd-completeness
+
+    
+    # Skill: check-tsd-completeness
+    
+    ## Task
+    
+    Verify the TSD has all seven sections and each is non-empty. Verify
+    every PRD FR has a matching component contract or API contract entry.
+
+### Skill: check-tsd-contract-consistency
+
+    
+    # Skill: check-tsd-contract-consistency
+    
+    ## Task
+    
+    Cross-check every contract pair:
+    
+    - API status codes ↔ error model entries.
+    - API request schemas ↔ data contract types.
+    - Component dependencies ↔ component existence.
+    - Observability log events ↔ error model.
+    
+    Flag every mismatch.
+
+### Skill: check-tsd-implementability
+
+    
+    # Skill: check-tsd-implementability
+    
+    ## Task
+    
+    For each component contract, decide if a coding agent could implement it
+    from the text alone. Flag any spec that:
+    
+    - Mentions a library/API not in the architecture doc.
+    - Has a method without a signature.
+    - Has a failure mode without a recovery rule.
+
+### Skill: score-tsd-readiness
+
+    
+    # Skill: score-tsd-readiness
+    
+    ## Task
+    
+    Aggregate findings to 0.0–1.0 + verdict.
+    
+    ## Scoring
+    
+    ```
+    score = 1.0
+      - 0.25 per `incomplete`
+      - 0.20 per `inconsistent`
+      - 0.15 per `unimplementable`
+    floor at 0.0
+    verdict = "pass" if score >= 0.90 else "revise"
+    ```
+
+### Skill: write-api-contracts
+
+    
+    # Skill: write-api-contracts
+    
+    ## Task
+    
+    For each endpoint:
+    
+    - METHOD + URL pattern
+    - Request schema (path / query / body)
+    - Response schema (200, plus every non-2xx in the error model)
+    - Authn / authz requirements
+    - Rate limit category
+    - One example request + response per status
+    
+    ## Stop condition
+    
+    Every request schema field maps to a data-contract type; every status
+    code in the response maps to an entry in the error model.
+
+### Skill: write-component-contracts
+
+    
+    # Skill: write-component-contracts
+    
+    ## Task
+    
+    For each component, document:
+    
+    - Public interface (functions / methods with signatures).
+    - Invariants (always-true properties).
+    - Dependencies (named other components).
+    - Failure modes (what it returns / raises on each failure).
+    
+    ## Stop condition
+    
+    Every component in the architecture has all four fields populated. A
+    coding agent should be able to implement it without follow-up questions.
+
+### Skill: write-data-contracts
+
+    
+    # Skill: write-data-contracts
+    
+    ## Task
+    
+    For each entity:
+    
+    - Field list with types + nullability + units.
+    - Primary key + uniqueness constraints.
+    - Validation rules (regex, range, enum).
+    - Lifecycle (created_at, updated_at, soft-delete?).
+    
+    JSON Schema or equivalent; no ORM-specific syntax.
+    
+    ## Stop condition
+    
+    Every entity has all four fields; no `string` field is left without a
+    length bound.
+
+### Skill: write-error-model
+
+    
+    # Skill: write-error-model
+    
+    ## Task
+    
+    A taxonomy of all error classes with:
+    
+    - Code (stable identifier, e.g. `AUTH_EXPIRED`).
+    - HTTP status (where applicable).
+    - User-facing message (or null if internal).
+    - When raised.
+    - Recovery path (retry / refresh / give up).
+    
+    ## Stop condition
+    
+    Every error has all five fields; no duplicate codes.
+
+### Skill: write-observability-spec
+
+    
+    # Skill: write-observability-spec
+    
+    ## Task
+    
+    Three subsections:
+    
+    1. **Metrics** — name, type (counter/gauge/histogram), labels, target.
+    2. **Logs** — event name + structured field schema + level.
+    3. **Traces** — spans + parent/child relations.
+    
+    Plus performance **budgets** (LCP, CLS, TTFB, bundle KB) for the
+    performance-auditor.
+    
+    ## Stop condition
+    
+    Every NFR with a number has a metric that measures it; every error in
+    the error model has a log event.
+
+### Skill: write-rollout-plan
+
+    
+    # Skill: write-rollout-plan
+    
+    ## Task
+    
+    Document:
+    
+    - Feature flag name(s) + default state.
+    - Canary stages (% traffic, duration, abort criteria).
+    - Kill switch (how to disable instantly).
+    - Backwards compatibility plan (data migration order).
+    
+    ## Stop condition
+    
+    Every flag has a kill criterion; every migration has a rollback plan.
+
+### Skill: write-tsd-overview
+
+    
+    # Skill: write-tsd-overview
+    
+    ## Task
+    
+    Write the TSD overview: 1 paragraph restating the PRD goals in technical
+    terms + a bullet list of components touched + cross-link to PRD section
+    ids.
+    
+    ## Stop condition
+    
+    Every PRD goal is referenced by id; every component named appears in the
+    architecture doc.
 
 ## Commands
 
@@ -1422,6 +2429,48 @@ running through the Codex CLI in this repository.
     11. `deployer` → `deploy-environment` (human-gated)
     
     Confidence gate fires at every step.
+
+### Command: /start-product
+
+    
+    # /start-product
+    
+    **Usage:** `/start-product <one-liner>`
+    
+    The full pipeline. Each arrow is a confidence-gated hand-off.
+    
+    ```
+    requirements         (gather raw stakeholder input)
+       ↓
+    prd-author           (write PRD section-by-section)
+       ↓
+    prd-reviewer         (gap-check PRD; ≥0.85 readiness to pass)
+       ↓
+    architect            (tech stack + components + data model)
+       ↓
+    tech-spec-author     (write TSD section-by-section)
+       ↓
+    tech-spec-reviewer   (gap-check TSD; ≥0.90 readiness to pass)
+       ↓
+    sprint-planner       (epics → stories → estimates → sprints → goals)
+       ↓
+    sprint-reviewer      (gap-check sprint plan; ≥0.85 readiness)
+       ↓
+    planner              (per-sprint task decomposition)
+       ↓
+    designer + frontend + backend     (per-task)
+       ↓
+    tester (unit + Puppeteer)
+       ↓
+    accessibility-auditor + performance-auditor   (UI surfaces)
+       ↓
+    reviewer + security
+       ↓
+    docs + devops + deployer
+    ```
+    
+    Each agent's outputs land in `docs/{prd,tsd,sprints}/<slug>.{md,yaml}`
+    and `logs/plans/`. Audit records flow to `logs/audit/<date>.jsonl`.
 
 ### Command: /status
 

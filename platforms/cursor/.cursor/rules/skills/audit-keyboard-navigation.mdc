@@ -1,0 +1,28 @@
+---
+description: "Skill: audit-keyboard-navigation"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: audit-keyboard-navigation
+category: a11y
+owner_agent: accessibility-auditor
+inputs:
+  - target_path
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: audit-keyboard-navigation
+
+## Task
+
+WCAG 2.2 2.1.1/2.4.3. Verify every interactive element is reachable AND
+operable via keyboard alone. Tab order must follow visual reading order.
+Flag any:
+
+- Element with `onClick` but no `onKeyDown` equivalent.
+- Custom widget without an ARIA role + keyboard handlers.
+- Tab order regression vs. visual order.

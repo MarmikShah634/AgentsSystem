@@ -1,0 +1,23 @@
+---
+id: audit-render-performance
+category: perf
+owner_agent: performance-auditor
+inputs:
+  - puppeteer_trace
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: audit-render-performance
+
+## Task
+
+Inspect a Puppeteer Performance trace:
+
+- Long tasks (> 50ms on the main thread).
+- Forced synchronous layouts (layout thrash).
+- > 30 components re-rendering per interaction.
+
+Flag each with the offending stack and a fix suggestion.

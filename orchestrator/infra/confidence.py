@@ -16,6 +16,11 @@ DEFAULT_SENSITIVE_GLOBS = [
     "**/*.tf",
     "**/openapi.yaml",
     "**/openapi.yml",
+    # Spec documents are the contract every coding agent reads from;
+    # any change to them is a product decision, not an implementation choice.
+    "docs/prd/**",
+    "docs/tsd/**",
+    "docs/sprints/**",
 ]
 
 

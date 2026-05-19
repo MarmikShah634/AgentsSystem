@@ -1,0 +1,26 @@
+---
+id: sequence-sprints
+category: sprint
+owner_agent: sprint-planner
+inputs:
+  - stories
+  - velocity
+outputs:
+  - sprints
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: sequence-sprints
+
+## Task
+
+Pack stories into sprints respecting:
+
+- Sum(story_points) ≤ `velocity` (default 25).
+- Dependency order (DAG).
+- Earliest finish for dependency-blocked stories.
+
+## Stop condition
+
+No sprint over-committed; no dependency violated; no story orphaned.

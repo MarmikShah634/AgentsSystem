@@ -1,0 +1,31 @@
+---
+description: "Skill: write-problem-statement"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: write-problem-statement
+category: prd
+owner_agent: prd-author
+inputs:
+  - stakeholder_input
+outputs:
+  - section
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: write-problem-statement
+
+## Task
+
+State the problem in the form:
+
+> Today, **\<users\>** struggle to **\<job\>** because **\<root cause\>**.
+> This results in **\<measurable harm\>**.
+
+One sentence. No solution language.
+
+## Stop condition
+
+Output contains all four `<...>` slots filled with concrete content.

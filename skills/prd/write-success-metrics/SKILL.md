@@ -1,0 +1,33 @@
+---
+id: write-success-metrics
+category: prd
+owner_agent: prd-author
+inputs:
+  - goals
+outputs:
+  - section
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: write-success-metrics
+
+## Task
+
+For each goal, name 1–2 metrics with: current baseline, target value,
+measurement window, instrumentation source. No vanity metrics.
+
+## Format
+
+```
+- Goal: <goal>
+  - Metric: <name>
+  - Baseline: <value (date)>
+  - Target: <value (window)>
+  - Source: <event / dashboard / query>
+```
+
+## Stop condition
+
+Every goal has at least one metric; every metric has all four fields
+populated.

@@ -1,0 +1,29 @@
+---
+description: "Skill: audit-aria-labels"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: audit-aria-labels
+category: a11y
+owner_agent: accessibility-auditor
+inputs:
+  - target_path
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: audit-aria-labels
+
+## Task
+
+WCAG 2.2 4.1.2. For every interactive element verify accessible name:
+
+- `<button>` has text content OR `aria-label`/`aria-labelledby`.
+- `<input>` has a `<label for>` OR `aria-label`.
+- `<img>` has `alt` (empty for decorative).
+- Icon-only buttons MUST have `aria-label`.
+
+Flag any missing or duplicate accessible names.

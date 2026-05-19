@@ -1,0 +1,29 @@
+---
+id: score-tsd-readiness
+category: tsd
+owner_agent: tech-spec-reviewer
+inputs:
+  - findings
+outputs:
+  - readiness_score
+  - verdict
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: score-tsd-readiness
+
+## Task
+
+Aggregate findings to 0.0–1.0 + verdict.
+
+## Scoring
+
+```
+score = 1.0
+  - 0.25 per `incomplete`
+  - 0.20 per `inconsistent`
+  - 0.15 per `unimplementable`
+floor at 0.0
+verdict = "pass" if score >= 0.90 else "revise"
+```

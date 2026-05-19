@@ -1,0 +1,27 @@
+---
+description: "Skill: check-prd-ambiguity"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: check-prd-ambiguity
+category: prd
+owner_agent: prd-reviewer
+inputs:
+  - prd_path
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: check-prd-ambiguity
+
+## Task
+
+Scan for ambiguous quantifiers and pronouns: "some", "many", "appropriate",
+"reasonable", "etc.", "and so on", "it", "they" without a referent.
+
+## Stop condition
+
+Findings list every ambiguous phrase with a clarification question.

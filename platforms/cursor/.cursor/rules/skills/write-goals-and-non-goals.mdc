@@ -1,0 +1,32 @@
+---
+description: "Skill: write-goals-and-non-goals"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: write-goals-and-non-goals
+category: prd
+owner_agent: prd-author
+inputs:
+  - problem_statement
+outputs:
+  - section
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: write-goals-and-non-goals
+
+## Task
+
+Emit two bulleted lists:
+
+- **Goals** — observable outcomes the release MUST achieve.
+- **Non-Goals** — explicitly out-of-scope outcomes that look adjacent.
+
+Every goal starts with a verb. Every non-goal explains why it's deferred.
+
+## Stop condition
+
+Goals list is non-empty; non-goals list is non-empty (silence on non-goals
+implies "anything goes" and that's wrong).

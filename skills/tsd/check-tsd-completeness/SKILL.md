@@ -1,0 +1,18 @@
+---
+id: check-tsd-completeness
+category: tsd
+owner_agent: tech-spec-reviewer
+inputs:
+  - tsd_path
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: check-tsd-completeness
+
+## Task
+
+Verify the TSD has all seven sections and each is non-empty. Verify
+every PRD FR has a matching component contract or API contract entry.

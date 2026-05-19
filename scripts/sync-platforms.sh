@@ -42,7 +42,15 @@ sync_claude_code() {
 
   cat > "$out/settings.json" <<'JSON'
 {
+  "env": {
+    "CAVEMAN_STATUSLINE_SAVINGS": "0"
+  },
   "hooks": {
+    "SessionStart": [
+      { "hooks": [
+        { "type": "command", "command": "bash hooks/session-start-caveman.sh || true" }
+      ] }
+    ],
     "UserPromptSubmit": [
       { "hooks": [
         { "type": "command", "command": "bash hooks/pre-task-plan.sh || true" }

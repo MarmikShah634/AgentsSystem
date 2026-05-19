@@ -1,0 +1,32 @@
+---
+description: "Skill: write-functional-requirements"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: write-functional-requirements
+category: prd
+owner_agent: prd-author
+inputs:
+  - goals
+  - personas
+outputs:
+  - section
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: write-functional-requirements
+
+## Task
+
+Numbered FR-1, FR-2, … each in the form:
+
+> The system SHALL **\<observable behaviour\>** when **\<trigger\>**.
+
+One behaviour per FR. No "should" — only "shall". No implementation hints.
+
+## Stop condition
+
+Every goal maps to at least one FR; every persona's primary job maps to
+at least one FR.

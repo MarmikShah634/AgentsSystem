@@ -23,6 +23,18 @@ def test_list_agents_includes_split_coder():
     assert "coder" not in ids
 
 
+def test_list_agents_includes_spec_chain():
+    ids = {a["id"] for a in R.handle("list-agents", {})["agents"]}
+    assert {"prd-author", "prd-reviewer", "tech-spec-author",
+            "tech-spec-reviewer", "sprint-planner",
+            "sprint-reviewer"}.issubset(ids)
+
+
+def test_list_agents_includes_auditors():
+    ids = {a["id"] for a in R.handle("list-agents", {})["agents"]}
+    assert {"accessibility-auditor", "performance-auditor"}.issubset(ids)
+
+
 def test_list_skills_includes_design_and_infra():
     sids = {s["id"] for s in R.handle("list-skills", {})["skills"]}
     assert "detect-ai-slop-patterns" in sids

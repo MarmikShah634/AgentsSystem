@@ -1,0 +1,27 @@
+---
+id: write-component-contracts
+category: tsd
+owner_agent: tech-spec-author
+inputs:
+  - architecture
+outputs:
+  - section
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: write-component-contracts
+
+## Task
+
+For each component, document:
+
+- Public interface (functions / methods with signatures).
+- Invariants (always-true properties).
+- Dependencies (named other components).
+- Failure modes (what it returns / raises on each failure).
+
+## Stop condition
+
+Every component in the architecture has all four fields populated. A
+coding agent should be able to implement it without follow-up questions.

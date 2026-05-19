@@ -1,0 +1,24 @@
+---
+id: write-out-of-scope
+category: prd
+owner_agent: prd-author
+inputs:
+  - goals
+  - non_goals
+outputs:
+  - section
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: write-out-of-scope
+
+## Task
+
+Enumerate explicit out-of-scope items reviewers might assume are in
+scope. Each item has a one-line rationale ("deferred to vNext", "covered
+by feature X", "not legal yet").
+
+## Stop condition
+
+At least three items; no item duplicates non-goals.

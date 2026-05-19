@@ -1,0 +1,24 @@
+---
+id: check-tsd-contract-consistency
+category: tsd
+owner_agent: tech-spec-reviewer
+inputs:
+  - tsd_path
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: check-tsd-contract-consistency
+
+## Task
+
+Cross-check every contract pair:
+
+- API status codes ↔ error model entries.
+- API request schemas ↔ data contract types.
+- Component dependencies ↔ component existence.
+- Observability log events ↔ error model.
+
+Flag every mismatch.

@@ -1,0 +1,31 @@
+---
+description: "Skill: write-rollout-plan"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: write-rollout-plan
+category: tsd
+owner_agent: tech-spec-author
+inputs:
+  - functional_requirements
+outputs:
+  - section
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: write-rollout-plan
+
+## Task
+
+Document:
+
+- Feature flag name(s) + default state.
+- Canary stages (% traffic, duration, abort criteria).
+- Kill switch (how to disable instantly).
+- Backwards compatibility plan (data migration order).
+
+## Stop condition
+
+Every flag has a kill criterion; every migration has a rollback plan.

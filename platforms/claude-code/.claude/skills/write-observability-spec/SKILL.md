@@ -1,0 +1,30 @@
+---
+id: write-observability-spec
+category: tsd
+owner_agent: tech-spec-author
+inputs:
+  - functional_requirements
+  - non_functional_requirements
+outputs:
+  - section
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: write-observability-spec
+
+## Task
+
+Three subsections:
+
+1. **Metrics** — name, type (counter/gauge/histogram), labels, target.
+2. **Logs** — event name + structured field schema + level.
+3. **Traces** — spans + parent/child relations.
+
+Plus performance **budgets** (LCP, CLS, TTFB, bundle KB) for the
+performance-auditor.
+
+## Stop condition
+
+Every NFR with a number has a metric that measures it; every error in
+the error model has a log event.

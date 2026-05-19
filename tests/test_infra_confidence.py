@@ -21,6 +21,14 @@ def test_env_path_blocked():
     assert not d.allowed and d.needs_human
 
 
+def test_spec_docs_blocked():
+    for path in ["docs/prd/checkout.md", "docs/tsd/checkout.md",
+                 "docs/sprints/2026-q1.md"]:
+        d = confidence.evaluate(confidence=1.0, touched_paths=[path])
+        assert not d.allowed, f"{path} should be sensitive"
+        assert d.needs_human
+
+
 def test_handle_skill_dispatch():
     out = confidence.handle("evaluate-confidence",
                             {"confidence": 0.92, "touched_paths": []})

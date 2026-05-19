@@ -1,0 +1,26 @@
+---
+id: write-user-personas
+category: prd
+owner_agent: prd-author
+inputs:
+  - stakeholder_input
+outputs:
+  - section
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: write-user-personas
+
+## Task
+
+For each distinct user type, emit:
+
+- Name (role label, not a person)
+- Primary jobs-to-be-done (1–3 bullets)
+- Constraints (device, context, expertise)
+- One illustrative scenario
+
+## Stop condition
+
+At least one persona; every persona has all four fields.

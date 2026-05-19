@@ -1,0 +1,24 @@
+---
+description: "Skill: check-sprint-dependencies"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: check-sprint-dependencies
+category: sprint
+owner_agent: sprint-reviewer
+inputs:
+  - sprints
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: check-sprint-dependencies
+
+## Task
+
+Detect cross-sprint cycles and stories that depend on later sprints.
+Flag any dependency that crosses more than two sprints (likely incorrect
+slicing).

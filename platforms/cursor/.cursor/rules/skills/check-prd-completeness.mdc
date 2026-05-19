@@ -1,0 +1,27 @@
+---
+description: "Skill: check-prd-completeness"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: check-prd-completeness
+category: prd
+owner_agent: prd-reviewer
+inputs:
+  - prd_path
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: check-prd-completeness
+
+## Task
+
+Verify the PRD has all nine required sections (see `assemble-prd`) and
+each is non-empty. Flag empty/skeleton sections as `missing`.
+
+## Stop condition
+
+Findings list every missing or empty section by name.

@@ -1,0 +1,21 @@
+---
+id: audit-bundle-size
+category: perf
+owner_agent: performance-auditor
+inputs:
+  - build_output
+  - budget_kb
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: audit-bundle-size
+
+## Task
+
+Measure gzipped bundle size from the build output (Vite/webpack stats,
+`dist/` size, etc.). Compare to `budget_kb` (default 250 for initial
+JS, 50 for initial CSS). Flag every entry-chunk over budget with the
+top contributors.

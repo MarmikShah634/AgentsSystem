@@ -1,0 +1,28 @@
+---
+description: "Skill: check-prd-conflicts"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: check-prd-conflicts
+category: prd
+owner_agent: prd-reviewer
+inputs:
+  - prd_path
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: check-prd-conflicts
+
+## Task
+
+Detect contradictions between sections — e.g. a goal that contradicts a
+non-goal, an FR that contradicts an NFR (perf vs. completeness), a
+persona constraint that contradicts an FR.
+
+## Stop condition
+
+Findings list every conflicting pair with both citations.

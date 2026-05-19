@@ -1,0 +1,30 @@
+---
+id: write-api-contracts
+category: tsd
+owner_agent: tech-spec-author
+inputs:
+  - functional_requirements
+  - data_contracts
+outputs:
+  - section
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: write-api-contracts
+
+## Task
+
+For each endpoint:
+
+- METHOD + URL pattern
+- Request schema (path / query / body)
+- Response schema (200, plus every non-2xx in the error model)
+- Authn / authz requirements
+- Rate limit category
+- One example request + response per status
+
+## Stop condition
+
+Every request schema field maps to a data-contract type; every status
+code in the response maps to an entry in the error model.

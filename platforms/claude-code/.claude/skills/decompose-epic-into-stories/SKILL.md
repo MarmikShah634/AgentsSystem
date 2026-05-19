@@ -1,0 +1,27 @@
+---
+id: decompose-epic-into-stories
+category: sprint
+owner_agent: sprint-planner
+inputs:
+  - epic
+  - acceptance_criteria
+outputs:
+  - stories
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: decompose-epic-into-stories
+
+## Task
+
+Break one epic into stories in "As a / I want / So that" form. Each
+story:
+
+- Maps to ≥1 acceptance criterion.
+- Is independently shippable.
+- Fits into a single sprint (no story crosses sprint boundaries).
+
+## Stop condition
+
+Every acceptance criterion has a story; no story exceeds 13 points.

@@ -1,0 +1,23 @@
+---
+id: audit-network-waterfall
+category: perf
+owner_agent: performance-auditor
+inputs:
+  - har_file
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: audit-network-waterfall
+
+## Task
+
+Parse a HAR file and flag:
+
+- > 50 requests on initial load.
+- > 1 MB transferred above the fold.
+- Render-blocking requests > 3.
+- Sequential requests that could be parallelised.
+- Missing cache headers on static assets.
