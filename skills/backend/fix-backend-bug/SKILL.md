@@ -3,21 +3,78 @@ id: fix-backend-bug
 category: backend
 owner_agent: backend
 inputs:
-  - bug_report
-  - failing_test
+  - bug_report: "observable symptom + reproduction steps + expected vs actual"
+  - failing_test: "path to the regression test (unit or integration) that currently fails"
+  - suspected_paths: "optional: list of server-tier files implicated in the report"
 outputs:
-  - patch
+  - patch: "unified diff of changes"
+  - touched_paths: "list of files modified"
+  - rationale: "1-3 sentences explaining root cause"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: fix-backend-bug
 
-## Task
+## Purpose
+Apply the minimum-diff fix for a server-tier bug so that the supplied failing test turns green while every previously-green test stays green and no API or DB contract changes.
 
-Minimum-diff fix for a server-tier bug. The failing test must exist
-before the fix (planner ensures via `generate-regression-test`).
+## When to invoke
+Invoke when the plan step is fix a backend bug AND `failing_test` exists and currently fails AND the failure reproduces locally. Reject if the test is missing — request `generate-regression-test` first. Reject if the symptom is UI-tier.
+
+## Procedure (follow exactly)
+1. Run `failing_test`. Confirm it fails for the reason described in `bug_report`. If it fails for an unrelated reason, STOP and revisit the test.
+2. Locate the offending code via the stack trace + `suspected_paths`. Map the failure to a layer: handler / service / repository / model. Fix at the correct layer; do not paper over from a higher layer.
+3. Form a one-sentence root-cause hypothesis. Write it in `rationale`. If you cannot, STOP — do not patch blindly.
+4. Apply the smallest fix that addresses the root cause. Forbidden: changing the test, broadening a `try/except`, swallowing the error, returning a fake success, changing the HTTP status code to hide a 500.
+5. Run the full backend test suite. The target test must pass; all others must remain green.
+6. Confirm: no change to OpenAPI/JSON schemas, no change to DB schema, no change to env-vars.
+7. If the root cause is a data issue (bad rows), the code fix must be defensive against future occurrences — and a data-cleanup migration goes through `implement-migration` separately.
+
+## How to think
+- "Fix" requires schema change → reject this step; planner must add `implement-migration` first.
+- N+1 query causing timeouts → fix the query/eager-load in repository, not by extending the timeout.
+- Race condition under load → fix the locking/idempotency, not by retrying blindly.
+- Tempted to refactor while fixing → don't; emit a follow-up `refactor-backend` step.
+
+## Required inputs
+`bug_report` and `failing_test` non-empty. `suspected_paths` may be empty.
+
+## Output format
+{"patch": "unified diff", "touched_paths": ["src/services/billing_service.py"], "rationale": "1-3 sentences explaining root cause and fix", "confidence": 0.0}
+
+## Quality criteria
+Passes if: regression test now passes; all prior tests green; no API/DB contract drift; diff scoped to root-cause file(s); no `time.sleep` hack; no broadened `except`; no test file altered.
+Fails if: modifies the failing test; swallows exceptions; changes status codes to mask 500s; alters response schema; alters DB schema; mixes refactor with fix.
+
+## Common pitfalls
+- `except Exception: return {"ok": True}`. Masking, not fixing.
+- Adding a retry loop around a deterministic failure. Hides the cause.
+- Changing the test fixture so the bug is no longer exercised.
+
+## Examples
+Python fix for off-by-one pagination:
+```python
+# before
+return items[offset : offset + limit + 1]      # extra item leaked into page
+# after
+return items[offset : offset + limit]
+```
+
+Anti-pattern (masking):
+```python
+# before: raises KeyError when 'email' missing
+return payload["email"].lower()
+# "fix":
+try: return payload["email"].lower()
+except Exception: return ""                    # silent data loss
+# proper fix: validate at the edge with the request schema; raise 422 if missing.
+```
 
 ## Stop condition
+`failing_test` passes; full backend suite passes; OpenAPI/DB diffs empty; `touched_paths` is the smallest set required.
 
-`failing_test` passes; all previously-green tests remain green.
+## Confidence guidance
+Lower when: root cause uncertain (≤0.7), failure not reproduced locally (≤0.6), fix touches a shared service (≤0.8), test flake suspected (≤0.7), concurrency involved (≤0.7). Floor 0.85 to proceed.

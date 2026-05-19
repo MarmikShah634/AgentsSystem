@@ -3,34 +3,74 @@ id: detect-ai-slop-patterns
 category: design
 owner_agent: designer
 inputs:
-  - target_path
+  - target_path: "absolute path to a UI surface (component, page, template, or stylesheet)"
 outputs:
-  - findings
+  - findings: "array of {area, severity, rule_id, path, line, msg, fix}"
+  - verdict: "'pass' | 'revise'"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: detect-ai-slop-patterns
 
-## Task
+## Purpose
+Run a deterministic anti-pattern checklist over a UI surface, flagging tropes that mark AI-generated design. Every hit is an `error`-severity finding with the rule id; the frontend agent fixes each hit unambiguously.
 
-Run the deterministic anti-pattern list across the UI. Each hit is an
-`error` finding.
+## When to invoke
+Invoke when `target_path` resolves to a UI surface AND the surface has been seen by humans (do not pre-emptively scrub scaffolds).
+Do NOT invoke to: audit typography (use audit-typography-scale), motion (use tune-motion-physics), or copy (use critique-ui-copy).
 
-## Banned patterns (impeccable + taste-skill)
+## Procedure (follow exactly)
+1. Parse the file. For each rule below, scan and emit `severity: "error"` with `rule_id` for every hit.
+2. Rule 1 — Accent hue in 250-290° (AI Purple/Blue). Convert any hex/RGB to OKLCH for the check.
+3. Rule 2 — Gradient text (`background-clip: text` + gradient fill) applied to any heading.
+4. Rule 3 — Default glassmorphism (`backdrop-filter: blur(...)`) without explicit layered context (no behind-content).
+5. Rule 4 — Side-stripe colored borders on cards (left/right border ≥3px with accent color).
+6. Rule 5 — Hero metric template: 4-up big-number row in the hero area.
+7. Rule 6 — Identical card grids with uniform shadows across every card.
+8. Rule 7 — Centered hero when project `DESIGN_VARIANCE > 4`. (Check env or config; if unknown, skip with note.)
+9. Rule 8 — Emojis as decorative UI (in headings, buttons, or feature lists).
+10. Rule 9 — Inter as primary font.
+11. Rule 10 — Modal-first interaction where inline editing would suffice (modal triggered for single-field edit).
+12. Each finding includes `rule_id` (1-10), `path`, `line`, `msg`, and a concrete `fix`.
+13. `verdict = "pass"` iff zero findings.
 
-1. AI Purple / Blue dominance — accent in the 250–290° hue range.
-2. Gradient text on headings.
-3. Default glassmorphism (`backdrop-filter: blur(...)` without context).
-4. Side-stripe coloured borders on cards.
-5. Hero metric templates (4-up big-number row).
-6. Identical card grids with uniform shadows.
-7. Centered heroes when `DESIGN_VARIANCE > 4`.
-8. Use of emojis as decorative UI.
-9. Inter as primary font.
-10. Modal-first interaction patterns where inline editing would suffice.
+## How to think
+- Gradient is on a logo, not a heading → rule 2 does not apply; pass.
+- Glassmorphism over an actual blurred background (image, video) → rule 3 passes.
+- Card grid is a data table → rule 6 passes if shadows are absent.
+- DESIGN_VARIANCE unset → skip rule 7 with a note in rationale; do not assume.
+
+## Required inputs
+`target_path` non-empty. DESIGN_VARIANCE optionally available. Missing path → STOP.
+
+## Output format
+```json
+{"findings":[
+  {"area":"ai-slop","severity":"error","rule_id":1,"path":"src/Hero.tsx","line":31,
+   "msg":"accent hue 272° falls inside the AI-purple band (250-290°).",
+   "fix":"shift accent to 28° (rust) or 160° (teal)."}],
+ "verdict":"revise","confidence":0.0}
+```
+
+## Quality criteria
+Passes if: every rule 1-10 evaluated (or rule 7 explicitly skipped with note); every finding cites rule_id, path, line, fix; verdict matches finding count.
+Fails if: missing rule_id; partial rule coverage; vague fix; verdict pass with findings present.
+
+## Common pitfalls
+- Forgetting hex→OKLCH conversion for rule 1.
+- Allowing emojis in feature lists "because they're fun".
+- Treating one Inter fallback as "primary" — only primary use triggers rule 9.
+- Auto-fixing instead of flagging.
+
+## Examples
+✅ Finding: rule_id=8, line 12, msg "rocket emoji used in feature heading", fix "remove emoji; use SVG icon component or no glyph".
+❌ Anti-pattern: emitting "UI looks generic" without rule_id or fixes.
 
 ## Stop condition
+Every rule 1-10 evaluated (rule 7 explicitly noted if skipped); findings carry rule_id + path + line + fix; verdict matches.
 
-Findings include the rule id (1–10) so the frontend agent's fix is
-unambiguous.
+## Confidence guidance
+Lower when: rule 7 input unavailable (≤0.8), styles in inline JS hard to parse (≤0.75), color tokens unresolved (≤0.8). ≥0.85 required.
