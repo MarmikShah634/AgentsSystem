@@ -1,0 +1,81 @@
+---
+id: refactor-frontend
+category: frontend
+owner_agent: frontend
+inputs:
+  - target_paths: "list of UI-tier files to refactor"
+  - refactor_goal: "concrete intent, e.g. extract hook, split component, rename prop"
+  - invariants: "list of behaviors that must not change (visual, a11y, perf budget)"
+outputs:
+  - patch: "unified diff of changes"
+  - touched_paths: "list of files modified"
+  - rationale: "1-3 sentences"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.85
+---
+
+# Skill: refactor-frontend
+
+## Purpose
+Apply a behavior-preserving change to UI-tier code only. Rendered output, public component APIs, and accessibility tree must be identical before and after.
+
+## When to invoke
+Invoke when the plan step is refactor and `target_paths` are all under the UI tier (components/, pages/, hooks/, styles/, api client) AND a test suite covering visible behavior exists. Reject if any target path is server-tier or if there are no covering tests — request `generate-regression-test` first.
+
+## Procedure (follow exactly)
+1. Confirm every path in `target_paths` is UI-tier. If any path is server-tier, STOP and ask human.
+2. Run the existing test suite + Puppeteer screenshot suite. Capture baseline. If anything is red before changes, STOP — refactoring on a red tree is forbidden.
+3. Apply the smallest change that achieves `refactor_goal`. Examples:
+   - Extract hook: move stateful logic to `src/hooks/<name>.ts`, import from prior caller.
+   - Split component: move JSX subtree to new file, import; keep prop API identical.
+   - Rename internal prop: only if not part of any public export.
+4. Public component APIs (exported prop types, exported function names) must not change. If they would, STOP — that is a breaking change requiring an explicit plan step.
+5. Re-run tests + screenshot diff. Diff must be <1% (anti-alias tolerance).
+6. Do not add libraries, do not bump dependencies, do not "modernize" unrelated code.
+
+## How to think
+- Refactor goal vague ("clean up") → STOP and ask for a concrete invariant.
+- Tempted to fix an adjacent bug → don't; emit a follow-up plan step instead.
+- Screenshot diff >1% but "looks the same" → still a fail; investigate.
+
+## Required inputs
+All three fields non-empty. `invariants` must include at minimum "visual output identical" and "exported props unchanged".
+
+## Output format
+{"patch": "unified diff", "touched_paths": ["src/components/UserCard/UserCard.tsx", "src/hooks/useDisclosure.ts"], "rationale": "1-3 sentences", "confidence": 0.0}
+
+## Quality criteria
+Passes if: every prior test still green; screenshot diff <1%; exported APIs byte-identical; no new dependency; no server-tier file touched.
+Fails if: alters public API; changes visual output; adds library; modifies file outside `target_paths`; mixes refactor with feature work.
+
+## Common pitfalls
+- Renaming an exported prop "while we're here". Breaking change.
+- Replacing `useState` with a state library. New dependency — forbidden.
+- Reformatting whole files. Inflates diff and hides intent.
+
+## Examples
+Extract a hook:
+```tsx
+// before: Disclosure logic inline in UserMenu.tsx
+// after:
+// src/hooks/useDisclosure.ts
+export function useDisclosure(initial = false) {
+  const [open, setOpen] = useState(initial);
+  return { open, toggle: () => setOpen(v => !v), close: () => setOpen(false) };
+}
+// src/components/UserMenu.tsx — uses useDisclosure(), JSX unchanged.
+```
+
+Anti-pattern:
+```tsx
+// "refactor" that renames a public prop — breaking
+export function UserCard({ userName }: { userName: string }) { ... }  // was `name`
+```
+
+## Stop condition
+All tests green; screenshot diff <1%; exported API identical; `touched_paths` ⊆ `target_paths` (plus any new hook file under hooks/).
+
+## Confidence guidance
+Lower when: test coverage thin (≤0.7), goal vague (≤0.7), framework idioms unclear (≤0.8), screenshot tooling flaky (≤0.8). Floor 0.85 to proceed.

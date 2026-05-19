@@ -1,0 +1,13 @@
+{
+  "ts": "<iso8601>",
+  "plan_id": "<uuid>",
+  "step_id": "<id>",
+  "agent": "<agent-id>",
+  "skill": "<skill-id>",
+  "inputs_sha256": "<hex>",
+  "outputs_sha256": "<hex>",
+  "confidence": 0.0,
+  "result": "ok|escalated|failed",
+  "human_input": null,
+  "duration_ms": 0
+}

@@ -1,0 +1,97 @@
+---
+description: "Skill: code-review"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: code-review
+category: review
+owner_agent: reviewer
+inputs:
+  - patch: "unified diff of changes under review"
+  - acceptance_criteria: "bulleted list from the plan step / TSD"
+  - tsd_section: "optional file path + anchor for the relevant contract"
+outputs:
+  - findings: "list of {severity, path, line, msg}; severity ∈ critical|major|minor|nit"
+  - verdict: "pass | changes-requested | block"
+  - rationale: "1-3 sentence summary of overall assessment"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.85
+---
+
+# Skill: code-review
+
+## Purpose
+Independently review a patch against acceptance criteria, the TSD contract,
+and existing code conventions. Report findings; never rewrite the code.
+
+## When to invoke
+Plan step is `review` AND a patch exists AND acceptance_criteria is non-empty.
+Do NOT invoke for: greenfield design, dependency upgrades only, formatting-only
+patches (route to `lint-check`), security or secret concerns (route to
+`security-scan` / `secret-scan`).
+
+## Procedure (follow exactly)
+1. Read the patch end-to-end. Note every new/changed symbol and file.
+2. For each acceptance criterion, locate the line(s) that satisfy it. Missing
+   coverage → finding with severity `major` and verdict `changes-requested`.
+3. Check correctness: off-by-one, nil/None handling, error paths, concurrency
+   hazards, resource leaks.
+4. Check simplicity: dead branches, duplicated logic, unused params, premature
+   abstraction.
+5. Check consistency: naming, layering, import order, error model. Compare to
+   adjacent files — do NOT invent a convention.
+6. Assign verdict: any critical → `block`; any major → `changes-requested`;
+   only minor/nit → `pass`.
+
+## How to think
+- Acceptance criterion ambiguous → record as finding, do not guess.
+- Style nit but functionally correct → severity `nit`, never `block`.
+- Suspect bug you cannot prove → severity `major`, msg starts "suspected:".
+- Patch touches a sensitive surface (auth, payments, migrations) → severity
+  floor `major`.
+
+## Required inputs
+`patch` and `acceptance_criteria` both non-empty. If `acceptance_criteria` is
+empty or vague, STOP and lower confidence to ≤0.6.
+
+## Output format
+```json
+{
+  "findings": [
+    {"severity": "major", "path": "api/users.py", "line": 42,
+     "msg": "missing handling for duplicate email per AC#3"}
+  ],
+  "verdict": "changes-requested",
+  "rationale": "AC#3 uncovered; otherwise solid.",
+  "confidence": 0.88
+}
+```
+
+## Quality criteria
+Pass: every AC mapped to a line or a finding; severity matches impact; no
+rewrites in `msg` field; verdict consistent with severity distribution.
+Fail: vague findings ("looks weird"), code rewritten in message, verdict
+disagrees with findings, missing AC mappings.
+
+## Common pitfalls
+- Treating style preference as `major`.
+- Reviewing intent ("you should have used X") instead of the patch.
+- Skipping deleted-code review — deletions can break callers.
+- Marking `pass` without enumerating AC coverage.
+
+## Examples
+✅ `{"severity":"major","path":"svc/order.go","line":88,"msg":"AC#2 requires
+idempotency key; handler ignores duplicate POST"}`
+❌ `{"severity":"major","msg":"refactor this function to use a map"}` (rewrite,
+not finding).
+
+## Stop condition
+Every acceptance criterion mapped; findings emitted with stable severity;
+verdict set; no file in the patch left unread.
+
+## Confidence guidance
+AC vague ≤0.7; unfamiliar stack ≤0.75; small patch, clear AC, all mapped
+≥0.9. Floor 0.85 required to emit a non-block verdict; below floor, escalate.

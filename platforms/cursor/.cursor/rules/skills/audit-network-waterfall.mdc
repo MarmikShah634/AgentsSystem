@@ -1,0 +1,102 @@
+---
+description: "Skill: audit-network-waterfall"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: audit-network-waterfall
+category: perf
+owner_agent: performance-auditor
+inputs:
+  - har_file: "path to a HAR (HTTP Archive) capture"
+  - budgets: "optional overrides; defaults below"
+outputs:
+  - findings: "list of {metric, measured, budget, severity, path, fix}"
+  - verdict: "pass|block"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.95
+---
+
+# Skill: audit-network-waterfall
+
+## Purpose
+Parse a HAR file and flag wasteful network behaviour on initial page
+load: excess requests, oversized transfer, render-blocking chains,
+serialised requests, and missing caching. Findings only.
+Anti-hallucination: every metric must trace to specific entries in
+the HAR.
+
+## When to invoke
+Plan step requests network perf audit AND HAR captures the load
+under test from cold cache.
+Do NOT invoke for: warm-cache captures, partial HARs, or HARs
+missing timings.
+
+## Procedure (follow exactly)
+1. Filter HAR to initial-load entries (before first significant
+   user input; use `pageref` if multi-page).
+2. Budgets (defaults; override via `budgets`):
+   - Requests ≤ 50.
+   - Transferred bytes above the fold ≤ 1 MB (sum of resources
+     blocking first paint).
+   - Render-blocking requests ≤ 3 (sync `<script>` + non-async CSS).
+   - Sequential dependent requests ≤ 2 long chains.
+   - All static assets MUST have `Cache-Control` with max-age ≥
+     1 day OR `immutable`.
+3. Identify parallelisable sequences: pairs/chains where request B
+   starts only after A finishes despite no real dependency.
+4. For each violation emit a finding with measured value, budget,
+   the URLs involved, and a concrete fix (preload, code-split,
+   bundle, add cache header, parallelise).
+
+## How to think
+- Third-party scripts often dominate — call them out separately;
+  they may be out-of-scope but still violate budgets.
+- Compression: report `transferSize` (over the wire), not
+  `resource size`.
+- HTTP/2 multiplexing reduces serialisation pain — still flag
+  long chains based on `startedDateTime` deltas.
+- Service worker hits do not count as fresh requests; note them.
+
+## Required inputs
+HAR parseable; covers initial load.
+
+## Output format
+```json
+{"findings": [
+   {"metric": "request_count", "measured": 78, "budget": 50,
+    "severity": "error", "path": "initial-load",
+    "fix": "Bundle 18 icon requests into a sprite; defer 12 analytics calls."}],
+ "verdict": "block", "confidence": 0.96}
+```
+
+## Quality criteria
+Pass: every budget checked against real HAR data; URLs cited;
+verdict matches severity; cache header rule applied to every static
+asset.
+Fail: counting requests after first interaction as initial load;
+ignoring `Cache-Control: no-store` on assets; suggesting fixes that
+contradict HAR evidence.
+
+## Common pitfalls
+- Treating `200 OK from cache` as a fresh request.
+- Counting preflight OPTIONS twice.
+- Ignoring `<link rel="modulepreload">` as render-blocking when it
+  is not.
+- Reporting transfer in MB while comparing to KB budget.
+
+## Examples
+Pass: 34 requests, 720 KB above fold, 2 render-blocking, all assets
+cached → verdict `pass`.
+Fail: 78 requests, 1.6 MB, 6 render-blocking → three findings emitted
+with concrete consolidation and preload suggestions.
+
+## Stop condition
+All five rules evaluated; findings emitted with URLs and fixes;
+verdict set; no source modified.
+
+## Confidence guidance
+HAR complete + timings present = 0.97; partial timings ≤0.92; warm
+cache suspected ≤0.85. Must be ≥0.95 to emit.

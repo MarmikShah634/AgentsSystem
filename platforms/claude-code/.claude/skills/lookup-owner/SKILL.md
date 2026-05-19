@@ -1,0 +1,15 @@
+---
+id: lookup-owner
+category: infra
+owner_agent: infra-registry
+inputs:
+  - skill
+outputs:
+  - owner_agent
+requires_plan: false
+emits_confidence: false
+---
+
+# Skill: lookup-owner
+
+Return the `owner_agent` for a skill id, or `null` if unknown.

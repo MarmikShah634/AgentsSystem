@@ -1,0 +1,81 @@
+---
+description: "Skill: pick-color-palette-oklch"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: pick-color-palette-oklch
+category: design
+owner_agent: designer
+inputs:
+  - brand_context: "brand brief: tone, audience, references, brand keywords"
+  - colour_strategy: "one value on the Restrained → Drenched scale: 'restrained' | 'balanced' | 'drenched'"
+outputs:
+  - palette: "{strategy, roles: {bg, fg, accent, muted, border} each as 9 OKLCH stops}"
+  - rationale: "1-3 sentences justifying the strategy and accent choice"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.85
+---
+
+# Skill: pick-color-palette-oklch
+
+## Purpose
+Emit one production palette in OKLCH coordinates aligned to a chosen color strategy. Enforces anti-AI-purple, single-accent discipline, and offset whites/blacks per impeccable + taste-skill conventions.
+
+## When to invoke
+Invoke when `brand_context` is non-empty AND `colour_strategy` is one of the three allowed values.
+Do NOT invoke to: pick a single brand color, generate gradients, or convert an existing hex palette (do that, then re-audit).
+
+## Procedure (follow exactly)
+1. Confirm `colour_strategy ∈ {restrained, balanced, drenched}`. Other values → STOP.
+2. Choose accent hue H avoiding 250-290° (AI-purple/blue cluster). If brand context demands that range, lower confidence to ≤0.7 and proceed only with explicit override.
+3. Constrain accent chroma C < 0.18 (≈ <80% saturation HSL). Out of range → clamp and note.
+4. Generate 9 stops (50, 100, 200, ..., 900) for each role: `bg`, `fg`, `accent`, `muted`, `border`. Use lightness ladder L=98→8 with non-linear spacing (heavier mid-tones near L=50).
+5. Replace pure white/black: `bg-50` minimum L=95 (never 100), `fg-900` maximum L=12 (never 0).
+6. Restrained strategy: accent appears in ≤2 UI roles. Drenched: accent saturates ≥4 roles. Balanced: 2-3 roles.
+7. Emit palette as a JSON object with role arrays of `oklch(L% C H)` strings; include the declared strategy.
+
+## How to think
+- Brand demands purple → check 250-290° rule; if blocked, propose adjacent magenta or indigo and cite in rationale.
+- Need a second accent → forbidden; collapse to one accent, derive emphasis from muted tones.
+- Dark mode required → generate a second palette via separate invocation; this skill emits one palette per call.
+- Accent appears on text and large surfaces simultaneously → check contrast (WCAG AA), adjust L.
+
+## Required inputs
+`brand_context` (string, non-empty), `colour_strategy` (enum). Missing or invalid → STOP.
+
+## Output format
+```json
+{"palette":{
+  "strategy":"balanced",
+  "roles":{
+    "bg":["oklch(98% 0.01 240)", "oklch(95% 0.02 240)", "..."],
+    "fg":["oklch(12% 0.02 240)", "..."],
+    "accent":["oklch(60% 0.16 28)", "..."],
+    "muted":["..."],
+    "border":["..."]}},
+ "rationale":"accent picked at 28° (warm rust) to avoid 250-290°; balanced strategy uses accent on CTAs + selection.",
+ "confidence":0.0}
+```
+
+## Quality criteria
+Passes if: all colors in `oklch()`; no pure white/black; one accent; accent chroma <0.18; accent hue outside 250-290° (or explicit override noted); 9 stops per role; strategy declared.
+Fails if: hex/RGB/HSL in output; >1 accent; pure white/black; accent in AI-purple band without override; missing role.
+
+## Common pitfalls
+- Emitting hex codes "for convenience" — forbidden.
+- Two accents masquerading as "primary" and "secondary".
+- Linear lightness spacing producing washed-out mid-tones.
+- Skipping contrast verification for accent on bg.
+
+## Examples
+✅ strategy=restrained, accent hue=28° (rust), C=0.14. Accent used only on primary CTA and focus ring; all 9 stops per role in OKLCH.
+❌ Anti-pattern: accent at 270° (AI purple), 2 accents declared, `#000000` as fg-900.
+
+## Stop condition
+Palette emitted with strategy declared, OKLCH-only, ≤1 accent, no pure black/white, accent hue + chroma within rules or override noted.
+
+## Confidence guidance
+Lower when: brand demands AI-purple band (≤0.7), contrast targets unmet without rework (≤0.75), strategy and brand seem mismatched (≤0.8). ≥0.85 required.

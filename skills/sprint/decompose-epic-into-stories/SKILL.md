@@ -1,0 +1,70 @@
+---
+id: decompose-epic-into-stories
+category: sprint
+owner_agent: sprint-planner
+inputs:
+  - epic: "{epic_id, name, persona_or_workflow, fr_ids}"
+  - acceptance_criteria: "array of {ac_id, fr_id, text} covering the epic's FRs"
+outputs:
+  - stories: "array of {story_id, epic_id, narrative, ac_ids, notes}"
+  - rationale: "1-3 sentences on slicing strategy"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.85
+---
+
+# Skill: decompose-epic-into-stories
+
+## Purpose
+Break one epic into independently shippable user stories in "As a / I want / So that" form. Each story is sprint-sized and maps to at least one acceptance criterion, enabling estimation and sequencing.
+
+## When to invoke
+Invoke when `epic` and its `acceptance_criteria` are both supplied AND no prior story list exists for the epic.
+Do NOT invoke to: estimate points (use estimate-story-points), reshape epics (use group-prd-into-epics), or write technical tasks.
+
+## Procedure (follow exactly)
+1. Read every AC in `acceptance_criteria`. Confirm every AC's `fr_id` belongs to `epic.fr_ids`. Mismatch → STOP.
+2. Cluster ACs into stories by user intent, not by technical layer. Each story expresses one user-visible behavior.
+3. Write the narrative as "As a <persona>, I want <capability>, so that <outcome>." No exceptions.
+4. Verify each story is independently shippable: it could be released alone without breaking earlier ACs.
+5. Verify each story fits one sprint (intuition target: 1-13 points; >13 → split before emitting).
+6. Map each AC to exactly one story; no orphan ACs, no duplicates.
+
+## How to think
+- Story would only make sense after another story ships → still independent if it can be feature-flagged or stubbed; otherwise add a `depends_on` note.
+- AC is purely infrastructural (logging, metrics) → attach to the story whose user behavior produces the signal.
+- Story narrative needs "and" to be complete → split into two stories.
+- Persona in narrative differs from epic persona → re-check the cluster.
+
+## Required inputs
+`epic.fr_ids` non-empty; `acceptance_criteria` covers those FRs; persona present. Missing → STOP.
+
+## Output format
+```json
+{"stories":[
+  {"story_id":"S1","epic_id":"E1",
+   "narrative":"As a new user, I want to sign up with email, so that I can access the app.",
+   "ac_ids":["AC-3","AC-4"],"notes":"depends on email service ready"}],
+ "rationale":"...","confidence":0.0}
+```
+
+## Quality criteria
+Passes if: every AC mapped exactly once; every narrative follows "As a / I want / So that"; every story independently shippable; no story exceeds the 13-point intuition cap.
+Fails if: layer-based slicing ("backend story", "frontend story"); multi-clause "and" narratives; orphan AC; story spanning two sprints.
+
+## Common pitfalls
+- Writing tasks instead of stories ("Implement /signup endpoint").
+- Combining two user goals via "and".
+- Mapping one AC to multiple stories to pad the count.
+- Treating non-functional ACs as separate stories instead of attaching them.
+
+## Examples
+✅ "As a returning user, I want to log in with my password, so that I can resume my session." Maps AC-7, AC-8. Independently shippable behind a flag.
+❌ Anti-pattern: "Build the auth backend" — task, not story; no persona; not user-visible.
+
+## Stop condition
+Every AC mapped exactly once; every story is a single-clause user narrative; no story >13 points by intuition.
+
+## Confidence guidance
+Lower when: ACs ambiguous (≤0.75), persona unstated (≤0.7), story interdependence dense (≤0.8). ≥0.85 required.

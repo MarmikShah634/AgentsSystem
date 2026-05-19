@@ -1,0 +1,109 @@
+---
+description: "Skill: audit-aria-labels"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: audit-aria-labels
+category: a11y
+owner_agent: accessibility-auditor
+inputs:
+  - target_path: "absolute path to the page or component"
+outputs:
+  - findings: "list of {wcag, severity, path, msg, fix}"
+  - verdict: "pass|block"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.95
+---
+
+# Skill: audit-aria-labels
+
+## Purpose
+Verify every interactive and informative element has a correct
+accessible name per WCAG 2.2 4.1.2 (Name, Role, Value). Findings only.
+Anti-hallucination: name the element and the missing/duplicate
+attribute precisely.
+
+## When to invoke
+Plan step requests a11y audit AND target contains forms, buttons,
+links, images, or custom widgets.
+Do NOT invoke for: empty layouts or pure-data outputs.
+
+## Procedure (follow exactly)
+1. Enumerate every node from the categories below.
+2. For each, derive the accessible name using the W3C accname algo
+   priority: `aria-labelledby` → `aria-label` → associated `<label
+   for>` → `title` → text content → `alt` → `placeholder` (last
+   resort, flag if used as sole name).
+3. Required rules:
+   - `<button>`: visible text OR `aria-label`/`aria-labelledby`.
+   - `<input>` (non-hidden): `<label for>` linking by `id` OR
+     `aria-label` OR `aria-labelledby`. `placeholder` is NOT a
+     label.
+   - `<img>`: `alt` present (empty string allowed for decorative);
+     missing `alt` = error.
+   - Icon-only buttons (no visible text): MUST have `aria-label`.
+   - `<a>`: must have discernible text; "click here" alone is a
+     finding under 2.4.4.
+4. Flag duplicate accessible names within a landmark when they point
+   to different destinations (ambiguous to AT users).
+5. Flag empty `aria-label=""` or `aria-labelledby` pointing to a
+   non-existent id.
+
+## How to think
+- Localised strings → check the default locale, note risk for others.
+- Dynamic labels (state-dependent) → ensure they update via React
+  state or `aria-live`, not stale text.
+- SVG used as icon → require `<title>` inside or `aria-label` on the
+  wrapping button.
+- Form errors → must reference the field via `aria-describedby`.
+
+## Required inputs
+Inspectable markup at `target_path`.
+
+## Output format
+```json
+{"findings": [
+   {"wcag": "4.1.2", "severity": "error",
+    "path": "SearchBar.tsx > button.icon",
+    "msg": "Icon-only button has no accessible name",
+    "fix": "Add aria-label=\"Search\"."}],
+ "verdict": "block", "confidence": 0.97}
+```
+
+## Quality criteria
+Pass: every node from the four categories evaluated; each finding
+states the algorithm's resolution and the fix; verdict matches
+severity.
+Fail: trusting `title` as primary name; accepting `placeholder` as
+label; missing `<img alt>` enforcement.
+
+## Common pitfalls
+- Marking `alt=""` as an error — empty alt is intentional for
+  decorative images.
+- Missing the `aria-labelledby`-points-to-missing-id case.
+- Skipping SVG icons because they "have a class".
+- Counting `aria-label` on a `<div>` with no role — invalid.
+
+## Examples
+Pass:
+```html
+<button aria-label="Close dialog"><svg aria-hidden="true">…</svg></button>
+<label for="email">Email</label><input id="email" type="email">
+```
+Fail:
+```html
+<button><svg>…</svg></button>            <!-- no name -->
+<input type="text" placeholder="Email">  <!-- placeholder not a label -->
+```
+
+## Stop condition
+All four categories swept; findings emitted with element paths and
+fixes; verdict set; no source modified.
+
+## Confidence guidance
+Static template fully analysed = 0.97; dynamic labels partially
+verified ≤0.92; third-party widget opaque ≤0.88. Must be ≥0.95 to
+emit.

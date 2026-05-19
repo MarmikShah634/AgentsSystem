@@ -1,0 +1,37 @@
+{
+  "env": {
+    "CAVEMAN_STATUSLINE_SAVINGS": "0"
+  },
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [
+        { "type": "command", "command": "bash hooks/session-start-caveman.sh || true" }
+      ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [
+        { "type": "command", "command": "bash hooks/pre-task-plan.sh || true" }
+      ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command",
+            "command": "ADS_EDITED_PATH=\"$CLAUDE_FILE_PATH\" bash hooks/post-edit-test.sh || true" }
+        ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Bash",
+        "hooks": [
+          { "type": "command",
+            "command": "case \"$CLAUDE_TOOL_INPUT\" in *\"git commit\"*) bash hooks/pre-commit-test.sh ;; esac" }
+        ] }
+    ],
+    "Stop": [
+      { "hooks": [
+        { "type": "command", "command": "bash hooks/post-task-log.sh || true" },
+        { "type": "command", "command": "bash hooks/confidence-gate.sh || true" }
+      ] }
+    ]
+  }
+}

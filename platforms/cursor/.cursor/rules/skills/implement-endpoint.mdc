@@ -1,0 +1,88 @@
+---
+description: "Skill: implement-endpoint"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: implement-endpoint
+category: backend
+owner_agent: backend
+inputs:
+  - route: "HTTP path pattern, e.g. /v1/users/{id}"
+  - method: "GET|POST|PUT|PATCH|DELETE"
+  - request_schema: "JSON Schema for path + query + body"
+  - response_schema: "{status_code: JSON Schema} per response"
+  - tsd_section: "file path + anchor to the TSD's API contract"
+outputs:
+  - patch: "unified diff of changes"
+  - touched_paths: "list of files modified"
+  - rationale: "1-3 sentences"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.85
+---
+
+# Skill: implement-endpoint
+
+## Purpose
+Add one HTTP endpoint that wires a route to the existing server, validates the request via the framework's native validator, delegates business logic to a service, and returns a response that exactly conforms to the declared schema.
+
+## When to invoke
+Invoke when the plan step says implement an endpoint AND the TSD's API contract for it is non-empty AND a paired integration-test step exists.
+Do NOT invoke to: modify an existing endpoint (use `refactor-backend`), add middleware globally, or add business logic (`implement-service`).
+
+## Procedure (follow exactly)
+1. Read the TSD API contract for this endpoint. If anything is ambiguous (status code without body, undefined auth), STOP and lower confidence — do not guess.
+2. Locate the existing router file. Reuse it; never create a new one.
+3. Author the handler:
+   a. Bind path + query + body via the framework's native validator (Pydantic / Zod / Joi / ActiveModel — match what's already used).
+   b. On validation failure, return the matching 4xx from the error model — never invent error shapes.
+   c. On valid input, call into the service layer. Never inline I/O.
+   d. Translate service errors to status codes per the error model.
+4. Register the handler using the framework's idiomatic decorator.
+5. Run the paired integration test. If it fails, fix the handler, never the test.
+
+## How to think
+- Validation framework can't express (cross-field rules) → custom validator in SAME file.
+- 200 vs 201 ambiguous in the TSD → STOP and ask human.
+- Auth needed → reuse the project's existing dependency, never roll your own.
+
+## Required inputs
+All five fields non-empty. If route or method conflicts with existing endpoint, STOP and ask human.
+
+## Output format
+{"patch": "unified diff", "touched_paths": ["src/api/routes/users.py", "tests/api/test_users.py"], "rationale": "1-3 sentences", "confidence": 0.0}
+
+## Quality criteria
+Passes if: every status code reachable; no direct I/O; zero new deps; no dead branches; paired test passes.
+Fails if: broad except; 200 with error payload; inline business logic; mutates global state; touches files outside touched_paths.
+
+## Common pitfalls
+- Catching `Exception` broadly. Catch only what you can recover from.
+- Mixing layers. Do not import DB models in the handler.
+- Logging in handlers. Logging belongs in services.
+
+## Examples
+FastAPI:
+```python
+@router.post("/users", status_code=201, response_model=UserOut)
+async def create_user(payload: UserCreate, svc: UserService = Depends()):
+    try: user = await svc.create(payload)
+    except DuplicateUserError: raise HTTPException(409, "user exists")
+    return UserOut.from_orm(user)
+```
+
+Anti-pattern:
+```python
+async def create_user(payload: dict):       # no validation
+    db = SessionLocal()                     # I/O in handler
+    db.add(User(**payload)); db.commit()    # bypass service
+    return {"ok": True}                     # invented shape
+```
+
+## Stop condition
+Handler exists; paired test asserts every status code; test passes; no file outside `touched_paths` modified.
+
+## Confidence guidance
+Lower when: TSD ambiguous (≤0.7), endpoint conflicts (≤0.6), idiom unclear (≤0.75), new file (≤0.8). Floor 0.85 to proceed.

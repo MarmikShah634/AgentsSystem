@@ -1,0 +1,12 @@
+{
+  "name": "ads-puppeteer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Puppeteer E2E runner for the Agentic Development System",
+  "scripts": {
+    "test": "node runner.js"
+  },
+  "dependencies": {
+    "puppeteer": "^22.0.0"
+  }
+}

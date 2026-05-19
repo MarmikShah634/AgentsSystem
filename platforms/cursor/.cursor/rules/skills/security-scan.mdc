@@ -1,0 +1,100 @@
+---
+description: "Skill: security-scan"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: security-scan
+category: review
+owner_agent: security
+inputs:
+  - patch: "unified diff of changes under review"
+  - repo_root: "absolute path to repository root for tool invocation"
+  - language_hint: "optional: python|js|ts|go|java|ruby|rust"
+outputs:
+  - findings: "list of {severity, path, line, rule, msg, owasp}"
+  - verdict: "pass | changes-requested | block"
+  - tool_used: "semgrep|bandit|gosec|brakeman|checklist|..."
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.95
+---
+
+# Skill: security-scan
+
+## Purpose
+Statically analyse the patch for OWASP Top 10 categories and language-specific
+classes of insecure code. Critical findings block the merge.
+
+## When to invoke
+Plan step is `security-review` OR patch touches auth, crypto, deserialisation,
+input parsing, file I/O, subprocess, SQL, network, or templating. Always
+invoke before `deploy-environment` to production.
+
+## Procedure (follow exactly)
+1. Detect available tools in order: `semgrep --config auto` (any lang),
+   `bandit -r` (python), `gosec ./...` (go), `brakeman` (rails),
+   `npm audit` is OUT OF SCOPE (use `dependency-audit`).
+2. If a tool is available, run it scoped to changed files only.
+3. If no tool is available, fall back to a checklist pass:
+   injection (SQLi, command, LDAP, XPath), authn/authz bypass, crypto misuse
+   (MD5/SHA1, ECB, static IV/salt, hardcoded keys), insecure deserialisation
+   (pickle, yaml.load, Marshal), SSRF, XXE, path traversal, open redirect,
+   unsafe templating, CORS wildcards, missing TLS verify, regex DoS.
+4. Map each finding to an OWASP category (e.g. A03:2021-Injection).
+5. Assign severity: RCE / auth bypass / secret exposure → `critical` →
+   verdict `block`. Privilege escalation, sensitive data leak → `major`.
+   Hardening recommendations → `minor`.
+6. Deduplicate findings keyed by `(path, line, rule)`.
+
+## How to think
+- User input reaching a sink with no validator → injection finding, do not
+  hand-wave "framework escapes it".
+- Crypto primitive in app code → suspect; flag unless using vetted library.
+- Subprocess with `shell=True` and any non-literal arg → critical.
+- Patch removes a security control → critical regardless of replacement.
+
+## Required inputs
+`patch` non-empty. If `repo_root` missing, STOP — tools cannot run.
+
+## Output format
+```json
+{
+  "findings": [
+    {"severity":"critical","path":"api/login.py","line":57,
+     "rule":"python.django.security.audit.sqli",
+     "msg":"raw SQL with f-string of request.GET['q']",
+     "owasp":"A03:2021-Injection"}
+  ],
+  "verdict": "block",
+  "tool_used": "semgrep",
+  "confidence": 0.97
+}
+```
+
+## Quality criteria
+Pass: every finding has path+line+rule+OWASP; no critical → `pass`;
+checklist used only when no tool available; tool_used recorded.
+Fail: generic msgs without rule id, missing OWASP mapping, downgrading a
+clear RCE to `major`.
+
+## Common pitfalls
+- Reporting tool noise without triage (e.g. test fixtures with intentional bad
+  crypto). Mark these `minor` with `msg` prefix "test-only:".
+- Skipping checklist when tools fail silently.
+- Treating `# nosec` / `# noqa` comments as authoritative — verify.
+
+## Examples
+✅ semgrep finding `python.lang.security.audit.dangerous-subprocess-use`
+mapped to A03, severity `critical`, verdict `block`.
+❌ `{"msg":"this looks insecure"}` with no rule, no line.
+
+## Stop condition
+Tool exited 0 or finished checklist; every changed file scanned; findings
+emitted; verdict consistent (any critical → block).
+
+## Confidence guidance
+Native tool ran clean on full diff ≥0.95; checklist-only on unfamiliar lang
+≤0.8 (escalate); partial scan ≤0.7. Floor 0.95 — below it, emit `block` and
+escalate to human.

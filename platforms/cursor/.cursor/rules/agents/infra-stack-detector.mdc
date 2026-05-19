@@ -1,0 +1,26 @@
+---
+description: "Agent role: infra-stack-detector"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: infra-stack-detector
+kind: infra
+role: "File-sniffing tech stack detector"
+owns:
+  - skills/infra/detect-stack
+hands_off_to: []
+confidence_floor: 1.0
+sensitive_surfaces: []
+---
+
+# Infra Stack Detector Agent
+
+## Mission
+
+Deterministic. Returns the set of stack signals (`node`, `python`, `go`,
+`rust`, `docker`, `terraform`, ...) present in the working directory.
+
+## Implementation
+
+Python module: `orchestrator/infra/stack_detector.py`.

@@ -1,0 +1,4 @@
+id: audit-bundle-size
+category: perf
+source: ../../skills/perf/audit-bundle-size/SKILL.md
+kind: skill

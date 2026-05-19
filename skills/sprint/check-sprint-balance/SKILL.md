@@ -1,0 +1,69 @@
+---
+id: check-sprint-balance
+category: sprint
+owner_agent: sprint-reviewer
+inputs:
+  - sprints: "array of {sprint_id, story_ids, total_points, stories: [{story_id, points}]}"
+  - velocity: "team velocity in points per sprint, default 25"
+outputs:
+  - findings: "array of {area, severity, sprint_id, msg, fix}"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.85
+---
+
+# Skill: check-sprint-balance
+
+## Purpose
+Emit findings about sprint packing health: over-commit, under-commit, and single-story concentration. The reviewer flags; it never rewrites the plan.
+
+## When to invoke
+Invoke when `sprints` is finalized with per-story points AND `velocity` is set.
+Do NOT invoke to: produce a final readiness score (use score-sprint-plan-quality), rewrite sprints (reviewer never rewrites), or check dependencies (use check-sprint-dependencies).
+
+## Procedure (follow exactly)
+1. Default velocity to 25 if absent.
+2. For each sprint, compute `total_points` and the max single-story share = max(points) / total_points.
+3. Emit `severity: "error"` if `total_points > velocity` (over-commit).
+4. Emit `severity: "warn"` if `total_points < 0.6 × velocity` (under-commit) and the sprint is not the final one with no remaining stories.
+5. Emit `severity: "warn"` if max single-story share > 0.5 (risky concentration).
+6. Each finding includes a concrete `fix` (e.g., "move S4 (5 pts) to SP3 to reduce SP2 from 28 to 23").
+
+## How to think
+- Final sprint under 0.6 × velocity with backlog drained → not a finding.
+- Over-commit by 1 point → still an error; reviewer is strict.
+- One 13-point story in a 25-velocity sprint → 13/25 = 0.52 → warn.
+- Sprint has exactly velocity points → pass; note zero slack in fix is not required.
+
+## Required inputs
+Sprints with story-level points; velocity scalar. Missing per-story points → STOP and ask for hydrated input.
+
+## Output format
+```json
+{"findings":[
+  {"area":"balance","severity":"error","sprint_id":"SP2",
+   "msg":"SP2 over-committed at 28 (velocity 25).",
+   "fix":"move S7 (5 pts) to SP3."}],
+ "confidence":0.0}
+```
+
+## Quality criteria
+Passes if: every sprint evaluated against all three rules; severities correctly mapped; every finding has a concrete `fix`; no rewrite of the plan itself.
+Fails if: missing rule check; vague fix ("rebalance the sprint"); rewriting sprints instead of flagging; mis-classified severity.
+
+## Common pitfalls
+- Calling under-commit an error (it's a warning).
+- Ignoring the final-sprint exception for under-commit.
+- Computing share against velocity instead of total_points.
+- Emitting findings without a `fix` string.
+
+## Examples
+✅ Finding: severity=warn, sprint=SP3, msg="S9 (13 pts) is 52% of SP3", fix="split S9 into S9a (5) + S9b (8) and place S9b in SP4".
+❌ Anti-pattern: emitting a fix that says "rebalance" with no quantities; or auto-moving stories instead of flagging.
+
+## Stop condition
+Every sprint checked against the three rules; every finding carries a concrete fix; no plan rewrite performed.
+
+## Confidence guidance
+Lower when: velocity uncalibrated (≤0.8), per-story points missing for some stories (≤0.7), team historical data absent (≤0.8). ≥0.85 required.

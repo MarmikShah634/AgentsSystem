@@ -1,0 +1,63 @@
+---
+id: check-tsd-contract-consistency
+category: tsd
+owner_agent: tech-spec-reviewer
+inputs:
+  - tsd_path: "Absolute path to the assembled TSD markdown"
+outputs:
+  - findings: "List of {section, kind: 'inconsistent', msg, fix} objects; never rewrites the TSD"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.95
+---
+
+# Skill: check-tsd-contract-consistency
+
+## Purpose
+Cross-check the four contract pairs that must agree across the TSD: API status codes ↔ Error Model entries; API request/response schemas ↔ Data Contracts; Component dependencies ↔ Component existence; Observability log events ↔ Error Model codes. Findings only — never edit the TSD.
+
+## When to invoke
+Invoke after `check-tsd-completeness` and `check-tsd-implementability`. Do NOT invoke to: judge whether contracts are correct individually (that's implementability), or to score readiness (that's `score-tsd-readiness`).
+
+## Procedure (follow exactly)
+1. **API ↔ Error Model**: enumerate every non-2xx status code in API Contracts. For each, confirm the referenced error code exists in Error Model. Conversely, list error codes never referenced by any API or component — flag as unreachable.
+2. **API ↔ Data Contracts**: every field in a request/response schema that names an entity must `$ref` a defined entity. Inline shapes that duplicate entity fields are inconsistencies (suggest `$ref`).
+3. **Component dependencies ↔ Component existence**: every name in `Dependencies` must match a `### <Name>` subsection in Component Contracts.
+4. **Observability logs ↔ Error Model**: every error code should be emittable via at least one log event; every log event referencing a code must reference one that exists.
+5. **Rollout ↔ Observability**: every abort criterion must reference a metric defined in Observability.
+6. Emit one `{section, kind: "inconsistent", msg, fix}` per mismatch. Do not rewrite the TSD.
+
+## How to think
+- Both directions matter: missing references AND orphan definitions.
+- Spelling counts: `AUTH_EXPIRED` and `AUTH-EXPIRED` are different codes; flag the mismatch.
+- An inline duplicate of an entity is a future divergence bug; treat it as inconsistent.
+- Do not let "obvious" implicit links pass; if it isn't textual, it isn't a link.
+
+## Required inputs
+`tsd_path` must point to a TSD with all seven sections present. If sections are missing, defer to `check-tsd-completeness` first.
+
+## Output format
+```
+{"findings": [{"section": "API Contracts", "kind": "inconsistent", "msg": "POST /orders returns 409 ORDER_CONFLICT but ORDER_CONFLICT is not in Error Model", "fix": "Add ORDER_CONFLICT to Error Model with recovery client-fix-input"}], "confidence": 0.0}
+```
+
+## Quality criteria
+Passes if: every API status code resolves to an error code; every component dependency exists; every entity ref is a `$ref` not an inline duplicate; every log code exists; every abort metric exists.
+Fails if: any unresolved code, dangling dependency, duplicated shape, or orphan metric goes unreported; redesigns suggested.
+
+## Common pitfalls
+- Treating two different spellings as the same code.
+- Letting inline schemas pass because they look right.
+- Missing the orphan direction (defined but unused).
+- Reporting a single finding for a class of issues instead of one per occurrence.
+
+## Examples
+Good: `{section: "Observability", kind: "inconsistent", msg: "log event order.rejected references code ORDER_DENIED not in Error Model", fix: "Rename to ORDER_REJECTED or add ORDER_DENIED to Error Model"}`.
+Bad: `{msg: "contracts feel out of sync"}` — not actionable, not located.
+
+## Stop condition
+A findings list exists with one entry per inconsistency across all five cross-checks; both missing-reference and orphan-definition directions covered; the TSD was not modified.
+
+## Confidence guidance
+Lower when: codes use inconsistent casing/separators across sections (≤0.9), schema references use ad-hoc rather than `$ref` (≤0.9), Observability not yet finalized (≤0.9). Required floor 0.95.

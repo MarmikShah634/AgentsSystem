@@ -1,0 +1,94 @@
+---
+description: "Skill: check-prd-completeness"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: check-prd-completeness
+category: prd
+owner_agent: prd-reviewer
+inputs:
+  - prd_path: "absolute path to the PRD file under docs/prd/"
+outputs:
+  - findings: "list of {section, kind, msg, fix} entries"
+  - verdict: "'pass' if zero missing sections else 'revise'"
+  - readiness_score: "float in [0,1] for this dimension"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.95
+---
+
+# Skill: check-prd-completeness
+
+## Purpose
+Verify the PRD contains all nine canonical sections, each non-empty and non-skeleton. Emit a findings list; never rewrite the PRD.
+
+## When to invoke
+Invoke after `assemble-prd` writes a PRD file, before downstream review skills (testability, ambiguity, conflicts, metrics-quality) run.
+
+Do NOT invoke to: judge content quality (other check-prd-* skills do that), score overall readiness (use score-prd-readiness), or edit the PRD (reviewers never edit).
+
+## Procedure (follow exactly)
+1. Read the file at `prd_path`. If unreadable or missing, STOP and ask human.
+2. Verify these nine `## ` headings are present in this order:
+   `Executive Summary`, `Problem Statement`, `Goals & Non-Goals`, `User Personas`, `Functional Requirements`, `Non-Functional Requirements`, `Success Metrics`, `Out of Scope`, `Open Questions`.
+3. For each heading, classify the section body:
+   a. `missing` — heading absent entirely.
+   b. `empty` — heading present, body is whitespace or fewer than 20 non-whitespace characters.
+   c. `skeleton` — body contains only placeholders (`<TBD>`, `<...>`, `TODO`, lorem ipsum, copy of the template).
+   d. `present` — body has real content.
+4. Emit one finding per non-`present` classification with kind `missing`, `empty`, or `skeleton`.
+5. Verdict `pass` iff all nine sections are `present`. Otherwise `revise`.
+6. Compute `readiness_score` for this dimension = 1.0 - 0.15 * count(non-present), floor 0.0.
+
+## How to think
+- A short but real section (e.g. a one-sentence Problem Statement) is `present`, not `empty`.
+- A heading with a single bullet that says "TBD" is `skeleton`, not `present`.
+- Wrong heading text ("## Exec Summary") -> count as `missing` for the canonical name; do not coerce.
+- Out-of-order headings still satisfy completeness for THIS check (order is enforced by assemble-prd); only presence matters here.
+- NEVER rewrite. NEVER infer content. Only report.
+
+## Required inputs
+`prd_path` must point to a readable file. If not, STOP.
+
+## Output format
+{
+  "findings": [
+    {"section": "User Personas", "kind": "missing|empty|skeleton", "msg": "string", "fix": "string"}
+  ],
+  "verdict": "pass|revise",
+  "readiness_score": 0.0,
+  "confidence": 0.0
+}
+
+## Quality criteria
+Passes if: every one of the nine canonical sections evaluated; kinds drawn from {missing, empty, skeleton}; verdict matches findings; readiness_score computed via stated formula.
+Fails if: sections skipped; kinds outside the enum; verdict inconsistent with findings; PRD content modified.
+
+## Common pitfalls
+- Marking a terse-but-real section as `empty`.
+- Coercing a misnamed heading to the canonical name silently.
+- Confusing this skill with check-prd-testability (which is about FR/NFR quality, not presence).
+- Inventing fixes that rewrite content; fixes here name what to add, not what to write.
+
+## Examples
+Good finding:
+{"section": "Out of Scope", "kind": "missing", "msg": "No '## Out of Scope' heading found.", "fix": "Run write-out-of-scope and re-assemble."}
+
+Good finding:
+{"section": "Success Metrics", "kind": "skeleton", "msg": "Body is only 'TBD - need analytics input'.", "fix": "Run write-success-metrics with confirmed baseline/source per goal."}
+
+Bad finding:
+{"section": "Problem Statement", "kind": "weak", "msg": "I rewrote it", "fix": "..."} (kind invented, rewrites)
+
+## Stop condition
+All nine sections classified; findings emitted only for non-present sections; verdict and readiness_score consistent with findings; confidence reported.
+
+## Confidence guidance
+Lower confidence when:
+- File contains unconventional formatting that obscures heading detection -> <= 0.85
+- Skeleton vs present is borderline for any section -> <= 0.9
+- Headings present but use slightly different wording -> <= 0.9
+- File encoding or markdown anomalies encountered -> <= 0.85
+Confidence >= 0.95 is required to proceed without human review.

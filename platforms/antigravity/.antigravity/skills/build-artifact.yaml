@@ -1,0 +1,4 @@
+id: build-artifact
+category: deploy
+source: ../../skills/deploy/build-artifact/SKILL.md
+kind: skill

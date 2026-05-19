@@ -1,0 +1,94 @@
+---
+description: "Skill: gather-user-stories"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: gather-user-stories
+category: requirements
+owner_agent: requirements
+inputs:
+  - goal: "free-form goal string from the user or PM, may be a one-liner or a paragraph"
+  - context_files: "list of absolute paths to supporting docs (existing PRDs, transcripts, notes)"
+outputs:
+  - user_stories: "ordered list of stories in canonical 'As a / I want / So that' form, one capability each"
+  - open_questions: "list of ambiguities discovered while parsing the goal"
+  - confidence: "float in [0,1]"
+requires_plan: false
+emits_confidence: true
+confidence_floor: 0.85
+---
+
+# Skill: gather-user-stories
+
+## Purpose
+Convert a free-form goal into a clean, deduplicated list of user stories in the canonical "As a <role>, I want <capability>, so that <value>" form. One story per distinct user-facing capability. This is the seed input for every downstream PRD and TSD step.
+
+## When to invoke
+Invoke when the orchestrator's plan step says gather requirements AND the user has supplied a goal string (any length). Invoke before any PRD section is drafted.
+
+Do NOT invoke to: write acceptance criteria (use extract-acceptance-criteria), validate completeness (use validate-requirements), or draft persona sections (use write-user-personas).
+
+## Procedure (follow exactly)
+1. Read the goal verbatim. Do not paraphrase before extraction.
+2. Read every `context_files` path. If a path is missing or unreadable, STOP and lower confidence; do not guess content.
+3. Enumerate distinct user-facing capabilities. A capability is one observable thing one role can do.
+4. For each capability, write exactly one story: `As a <role>, I want <capability>, so that <value>`.
+   a. `<role>` must be a role from the goal or context — never invent personas.
+   b. `<capability>` must be observable behavior, not an internal mechanism.
+   c. `<value>` must come from the goal or context — if absent, add an entry to `open_questions` and lower confidence.
+5. Deduplicate. If two stories share role + capability, merge.
+6. Order stories by the order capabilities appear in the source text.
+7. List every ambiguity (missing role, missing value, unclear scope) in `open_questions`.
+
+## How to think
+- Compound story ("I want X and Y") → split into two stories, never one.
+- Tech-flavored capability ("uses Postgres", "via REST") → strip the tech and keep only the user-facing behavior.
+- Role implied but never named → use the most specific honest label ("authenticated user", not "user"); flag in `open_questions`.
+- Value clause missing in source → do NOT invent a benefit; record as open question.
+- Goal mentions a system component, not a user need → do NOT emit a story; record as open question.
+
+## Required inputs
+`goal` must be non-empty. `context_files` may be empty but must be a list. If `goal` is empty or only whitespace, STOP and ask human.
+
+## Output format
+{
+  "user_stories": [
+    {"id": "US-1", "role": "string", "capability": "string", "value": "string"}
+  ],
+  "open_questions": ["string"],
+  "confidence": 0.0
+}
+
+## Quality criteria
+Passes if: every capability in the goal maps to at least one story; no story compounds two capabilities; every story has all three slots filled OR an open question covers the missing slot; story ids are sequential `US-N`.
+Fails if: stories invented from outside the goal; tech mentioned in capability; compound stories; duplicate role+capability pairs; empty value slot with no matching open question.
+
+## Common pitfalls
+- Inventing roles the goal never mentions (e.g. adding "admin" when only "user" appears).
+- Merging two capabilities into one story to keep the list short.
+- Treating non-functional aspirations ("fast", "secure") as stories — they belong in NFRs.
+- Restating the goal as one mega-story.
+
+## Examples
+Goal: "Let teachers assign weekly quizzes and see class averages."
+
+Good:
+- US-1: As a teacher, I want to assign a weekly quiz to my class, so that students practice on a schedule.
+- US-2: As a teacher, I want to view class average scores per quiz, so that I can identify topics to reteach.
+
+Bad:
+- As a user, I want to use the quiz system. (no capability, generic role)
+- As a teacher, I want to assign quizzes and see averages. (compound)
+- As a teacher, I want a Postgres-backed quiz table. (tech in capability)
+
+## Stop condition
+Every distinct capability in the goal maps to exactly one story; no story compounds capabilities; every missing slot is matched by an open question; confidence is reported.
+
+## Confidence guidance
+Lower confidence when:
+- Goal lacks a clear value clause for any capability -> <= 0.75
+- Roles are ambiguous or inferred -> <= 0.7
+- Context files referenced but unreadable -> <= 0.6
+- More than one viable split of a compound goal -> <= 0.7
+Confidence >= 0.85 is required to proceed without human review.

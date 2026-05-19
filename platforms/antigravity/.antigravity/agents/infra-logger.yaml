@@ -1,0 +1,3 @@
+id: infra-logger
+source: ../../agents/infra-logger.md
+kind: agent

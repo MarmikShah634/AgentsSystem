@@ -1,0 +1,85 @@
+---
+id: implement-service
+category: backend
+owner_agent: backend
+inputs:
+  - service_name: "PascalCase identifier, e.g. UserService"
+  - method_specs: "list of {name, params, returns, errors, behavior_summary}"
+  - dependencies: "list of repository/client interfaces the service injects"
+outputs:
+  - patch: "unified diff of changes"
+  - touched_paths: "list of files modified"
+  - rationale: "1-3 sentences"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.85
+---
+
+# Skill: implement-service
+
+## Purpose
+Write one service class/module containing the business logic for a domain object. The service must depend only on injected repository/client interfaces — no HTTP, no SQL, no direct I/O — so it is unit-testable with mocks.
+
+## When to invoke
+Invoke when the plan step is implement a service AND `method_specs` is non-empty AND every dependency interface already exists (or is part of the same plan as an earlier step). Reject if the spec contains HTTP or SQL — those belong in endpoints or repositories.
+
+## Procedure (follow exactly)
+1. Locate the project's services directory (e.g. `src/services/`, `app/services/`). Reuse the directory; do not create a parallel structure.
+2. Define the service as the framework idiom: class with constructor injection (NestJS, Spring), dataclass + DI container (FastAPI Depends), plain module of pure functions (Go, Rust). Match what's already in use.
+3. For each entry in `method_specs`:
+   a. Type the signature exactly per `params` and `returns`.
+   b. Implement using only injected dependencies. Never call `requests`, `fetch`, `db.execute` directly.
+   c. Raise domain errors from the project's existing error module — do not invent new exception types unless `errors` declares one not present.
+   d. Keep the function focused; complex orchestration across methods → split into private helpers in the same module.
+4. Do not log inside pure methods; if logging required, use the project's injected logger.
+5. Run paired unit tests that mock every dependency and assert behavior per `behavior_summary`.
+
+## How to think
+- A method needs a transaction → take a UnitOfWork dependency, do not start one directly.
+- Cross-service call → inject the other service; do not import its repository.
+- Method spec ambiguous on error semantics → STOP and ask human.
+
+## Required inputs
+All three fields non-empty. Every `dependencies` entry must resolve to an existing interface or be declared in the same plan.
+
+## Output format
+{"patch": "unified diff", "touched_paths": ["src/services/user_service.py", "tests/services/test_user_service.py"], "rationale": "1-3 sentences", "confidence": 0.0}
+
+## Quality criteria
+Passes if: no I/O imports (`requests`, `httpx`, `sqlalchemy`, `psycopg`) in the file; every method has a mock-based unit test; errors come from the project error module; signatures match spec exactly.
+Fails if: direct DB/HTTP calls; mutates global state; logs without injected logger; introduces a dependency outside `dependencies`.
+
+## Common pitfalls
+- Importing the ORM Session and calling it. That's the repository's job.
+- Catching all exceptions and re-raising as `RuntimeError`. Be specific.
+- Putting validation in the service that belongs in the request schema. Validate at the edge.
+
+## Examples
+Python service with injected repository:
+```python
+class UserService:
+    def __init__(self, repo: UserRepository, clock: Clock):
+        self.repo = repo
+        self.clock = clock
+
+    async def create(self, payload: UserCreate) -> User:
+        if await self.repo.exists_by_email(payload.email):
+            raise DuplicateUserError(payload.email)
+        return await self.repo.insert(User(**payload.dict(), created_at=self.clock.now()))
+```
+
+Anti-pattern:
+```python
+class UserService:
+    async def create(self, payload):
+        async with httpx.AsyncClient() as c:                          # HTTP in service
+            await c.post("http://billing/charge", json={...})
+        engine.execute("INSERT INTO users VALUES (...)")              # SQL in service
+```
+
+## Stop condition
+Service module exists; every method has a passing unit test with mocked dependencies; no I/O imports present; `touched_paths` minimal.
+
+## Confidence guidance
+Lower when: spec ambiguous (≤0.7), dependencies missing (≤0.6), error semantics unclear (≤0.75), framework DI idiom unfamiliar (≤0.8). Floor 0.85 to proceed.

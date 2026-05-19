@@ -1,0 +1,100 @@
+---
+id: run-migration
+category: deploy
+owner_agent: deployer
+inputs:
+  - migration_path: "path to migration file or directory"
+  - environment: "dev|staging|prod"
+  - migration_tool: "alembic|django|flyway|liquibase|knex|sqlx|prisma|..."
+  - dry_run: "boolean; default true on first invocation"
+outputs:
+  - applied_revision: "new head revision id"
+  - previous_revision: "prior head revision id (for rollback)"
+  - tool_used: "the migration tool executed"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.95
+---
+
+# Skill: run-migration
+
+## Purpose
+Apply a database migration in `environment`. ALWAYS human-gated. ALWAYS
+records the previous revision so `rollback` can restore.
+
+## When to invoke
+Plan step is `run-migration` AND human approval token present AND
+`previous_revision` will be captured. Do NOT invoke as a side-effect of
+`deploy-environment`; migrations are a separate, explicit step.
+
+## Procedure (follow exactly)
+1. Confirm human approval token for the target `environment`. Missing → STOP.
+2. Identify migration tool by repo evidence and `migration_tool` input.
+   Mismatch → STOP.
+3. Record current head revision:
+   - alembic → `alembic current`
+   - django → `python manage.py showmigrations --plan | tail`
+   - flyway → `flyway info`
+   - knex → `knex migrate:currentVersion`
+   - prisma → `prisma migrate status`
+4. If `dry_run` is true: run the tool's plan/preview command (e.g.
+   `alembic upgrade head --sql`) and emit the SQL plan; do not apply.
+5. If `dry_run` is false AND prior dry-run was reviewed AND approval token
+   is for `apply`: run upgrade command (`alembic upgrade head`,
+   `manage.py migrate`, `flyway migrate`, `knex migrate:latest`,
+   `prisma migrate deploy`).
+6. Re-read head revision; verify it changed (or that migration was a no-op
+   and record that). Record `applied_revision` and `previous_revision`.
+7. For prod: take a logical backup or snapshot reference BEFORE step 5 if
+   policy requires; record snapshot id in output metadata.
+
+## How to think
+- Destructive migration (DROP, ALTER … DROP COLUMN) → require explicit
+  human acknowledgement of data loss; STOP without it.
+- Long-running migration → estimate from dry-run plan; chunk if tool
+  supports it; do not hold locks unattended.
+- Out-of-order migration files → STOP, ask human.
+- Multi-tenant DB → ensure migration runs per tenant if schema-per-tenant
+  pattern; do not assume.
+
+## Required inputs
+All four non-empty. `dry_run=false` requires recorded approval AND a
+previously emitted dry-run plan for this same `migration_path`.
+
+## Output format
+```json
+{
+  "applied_revision": "9f2c1ab3d4e5",
+  "previous_revision": "7a1b8cd2e3f0",
+  "tool_used": "alembic",
+  "confidence": 0.97
+}
+```
+
+## Quality criteria
+Pass: human approval recorded; previous_revision captured; dry-run plan
+reviewed; new head matches expected; output includes rollback info.
+Fail: applying without approval, skipping dry-run, missing
+previous_revision, mixing environments.
+
+## Common pitfalls
+- Running migrations from a stale checkout (head differs from CI artifact).
+- Mixing `--fake` and real migrations (django) without recording which.
+- Forgetting that some tools auto-apply on app start — verify and disable
+  for controlled rollouts.
+- Treating "no migrations to apply" as a failure — it's a valid no-op.
+
+## Examples
+✅ `alembic upgrade head` after approved dry-run; applied_revision changes
+from `7a1b8cd2e3f0` to `9f2c1ab3d4e5`, both recorded.
+❌ `manage.py migrate --fake` in prod without explicit human approval
+flagged as a fake-only operation.
+
+## Stop condition
+Approval verified; previous_revision recorded; migration applied (or
+dry-run plan emitted); new revision verified; rollback metadata present.
+
+## Confidence guidance
+Dev with dry-run reviewed ≥0.97; staging with approval ≥0.95; prod always
+require explicit human approval token, otherwise STOP. Floor 0.95.

@@ -1,0 +1,122 @@
+---
+description: "Skill: configure-ci"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: configure-ci
+category: deploy
+owner_agent: devops
+inputs:
+  - ci_system: "github-actions|gitlab-ci|circleci|buildkite|jenkins"
+  - jobs: "ordered list, subset of: install, lint, test, build, deploy"
+  - language: "primary language for default tooling selection"
+  - repo_root: "absolute path to repository root"
+outputs:
+  - ci_config_path: "path to authored/updated CI config file"
+  - touched_paths: "list of modified files"
+  - rationale: "1-3 sentence summary of changes"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.85
+---
+
+# Skill: configure-ci
+
+## Purpose
+Author or update CI configuration for the detected system with the
+requested jobs. Human-gated: deploy jobs are scaffolded with `environment:`
+protection and manual approval where the CI system supports it.
+
+## When to invoke
+Plan step is `configure-ci` OR CI config is missing/outdated AND the repo
+has executable test/build commands. Do NOT invoke to push pipeline
+secrets — that is out of scope.
+
+## Procedure (follow exactly)
+1. Locate the canonical CI file for `ci_system`:
+   - github-actions → `.github/workflows/ci.yml`
+   - gitlab-ci → `.gitlab-ci.yml`
+   - circleci → `.circleci/config.yml`
+   - buildkite → `.buildkite/pipeline.yml`
+   - jenkins → `Jenkinsfile`
+2. If a file exists, preserve unrelated jobs and merge in changes; do not
+   wholesale rewrite.
+3. For each requested job, emit a stage with native commands for `language`
+   (e.g. python → `pip install -r requirements.txt`, `ruff check .`,
+   `pytest -q`). Reuse repo's npm/poetry/make scripts when present.
+4. `deploy` jobs MUST:
+   - Be gated on the main branch only (`if: github.ref == 'refs/heads/main'`
+     or equivalent).
+   - Use environment protection requiring manual approval for prod.
+   - Reference secrets via `${{ secrets.X }}` syntax; never inline.
+5. Validate YAML/JSON syntax before emitting.
+
+## How to think
+- Existing CI uses a matrix → preserve it; add jobs inside the matrix only
+  if appropriate.
+- Self-hosted vs hosted runners → respect existing `runs-on` choice.
+- Reusable workflows / templates already in use → call them, don't
+  duplicate.
+- Conflicting job names → suffix new jobs rather than overwrite.
+
+## Required inputs
+All four non-empty. If `ci_system` doesn't match repo evidence, STOP and
+ask — do not auto-migrate between CI systems.
+
+## Output format
+```json
+{
+  "ci_config_path": ".github/workflows/ci.yml",
+  "touched_paths": [".github/workflows/ci.yml"],
+  "rationale": "Added lint and test jobs running on ubuntu-latest with Python 3.12; deploy job gated on main and prod environment.",
+  "confidence": 0.9
+}
+```
+
+Example GitHub Actions snippet emitted:
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: pytest -q
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./scripts/deploy.sh
+```
+
+## Quality criteria
+Pass: file parses; requested jobs present; deploy gated; secrets via refs
+only; no unrelated jobs deleted.
+Fail: inline secrets, missing `environment:` on prod deploy, deleted jobs,
+broken YAML, wrong runner for repo.
+
+## Common pitfalls
+- Pinning actions to `@main` instead of a tagged version.
+- Forgetting `actions/checkout` step.
+- Caching wrong paths (`~/.cache/pip` vs `~/.cache/pypoetry`).
+- Adding deploy job that runs on every push.
+
+## Examples
+✅ See snippet above.
+❌ `deploy:\n  steps:\n    - run: aws s3 cp ... --secret-key ABCD1234` —
+inlined secret and no gating.
+
+## Stop condition
+File written and YAML-parses; jobs match request; deploy is gated; secrets
+are references only.
+
+## Confidence guidance
+Existing config + small additive change ≥0.92; new file from scratch on
+familiar CI ≥0.88; unfamiliar CI system ≤0.75 (escalate). Floor 0.85.

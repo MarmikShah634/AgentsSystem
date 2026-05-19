@@ -1,0 +1,105 @@
+---
+id: generate-puppeteer-test
+category: testing
+owner_agent: tester
+inputs:
+  - feature_url: "fully-qualified URL or path served by the dev server"
+  - acceptance_criteria: "list of G/W/T statements describing user flow"
+  - selectors: "optional map of stable selectors (data-testid preferred)"
+outputs:
+  - puppeteer_script_path: "absolute path under puppeteer/tests/"
+  - rationale: "1-3 sentence summary"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.85
+---
+
+# Skill: generate-puppeteer-test
+
+## Purpose
+Author an end-to-end Puppeteer script that drives a real Chromium
+session through the feature at `feature_url` and asserts observable
+outcomes. Anti-hallucination: never invent helpers — only call ones
+exported from `puppeteer/helpers/`.
+
+## When to invoke
+Plan step requests browser-level coverage AND a dev server target
+exists AND `feature_url` is reachable AND at least one acceptance
+criterion describes user-visible behaviour.
+Do NOT invoke for: pure unit logic, API-only flows, or features without
+a stable URL.
+
+## Procedure (follow exactly)
+1. Read `puppeteer/runner.js` and the modules under
+   `puppeteer/helpers/` to learn available primitives (login,
+   navigate, wait_for_idle). Do not import third-party utilities.
+2. Create the script at `puppeteer/tests/<feature>.test.js` —
+   `<feature>` is kebab-case from the plan step title.
+3. Structure: `setup()` → navigate → assert pre-state → perform
+   actions → assert post-state → `teardown()`.
+4. Required coverage: one golden path + one edge case (validation
+   error, empty state, or unauthorised access).
+5. Prefer `data-testid` selectors. If absent in the source, STOP and
+   request them rather than coupling to brittle CSS/XPath.
+6. Run via `node puppeteer/runner.js puppeteer/tests/<feature>.test.js`
+   against a running dev server. Must exit 0.
+
+## How to think
+- Flaky timing → use `waitForSelector`/`waitForFunction`, never
+  `setTimeout`.
+- Auth required → call existing login helper, never type credentials
+  inline.
+- Visual-only assertion → take screenshot via helper and assert DOM
+  state too; image diffs alone are not enough.
+- Cross-origin redirects → confirm allowed in runner config or STOP.
+
+## Required inputs
+`feature_url` reachable from the test environment. Criteria must
+describe at least one user action and one observable outcome.
+
+## Output format
+```json
+{"puppeteer_script_path": "/abs/puppeteer/tests/checkout.test.js",
+ "rationale": "Drives golden checkout and invalid-card edge case.",
+ "confidence": 0.0}
+```
+
+## Quality criteria
+Pass: every action gated on an explicit wait; assertions reference DOM
+or network state; no `sleep(N)`; script idempotent across reruns; uses
+only existing helpers.
+Fail: hard-coded sleeps, brittle nth-child selectors, assertions on
+text that changes per locale without normalisation, leaked browser
+contexts.
+
+## Common pitfalls
+- `await page.click(sel)` without `waitForSelector(sel)`.
+- Hard-coding ports instead of reading runner config.
+- Asserting absence with `!found` instead of `waitForSelector(..., {
+  hidden: true })`.
+- Forgetting `browser.close()` in teardown.
+
+## Examples
+Pass:
+```js
+const { launch, login } = require("../helpers");
+module.exports = async () => {
+  const { page, browser } = await launch();
+  await login(page, "qa@example.com");
+  await page.goto(process.env.BASE_URL + "/checkout");
+  await page.waitForSelector('[data-testid="pay"]');
+  await page.click('[data-testid="pay"]');
+  await page.waitForSelector('[data-testid="confirm"]');
+  await browser.close();
+};
+```
+Fail: `await page.waitForTimeout(3000)` then `click(".btn-primary")`.
+
+## Stop condition
+Script saved under `puppeteer/tests/`; runner executes it; exit code 0;
+mutating the feature breaks the script with a clear assertion message.
+
+## Confidence guidance
+Selectors absent ≤0.7; URL unreachable in env ≤0.6; criteria not
+user-observable ≤0.75; helper missing ≤0.7. Must be ≥0.85 to emit.

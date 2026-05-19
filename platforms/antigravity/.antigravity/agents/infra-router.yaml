@@ -1,0 +1,3 @@
+id: infra-router
+source: ../../agents/infra-router.md
+kind: agent

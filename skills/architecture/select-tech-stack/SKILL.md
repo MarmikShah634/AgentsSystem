@@ -1,0 +1,75 @@
+---
+id: select-tech-stack
+category: architecture
+owner_agent: architect
+inputs:
+  - requirements: "PRD functional + non-functional requirements list with ids"
+  - detected_stack: "Result of scanning the repo for existing language, framework, package manager, datastore, CI; may be empty for greenfield"
+outputs:
+  - tech_stack: "Object with fields {language, framework, datastore, key_libraries[], runtime, package_manager, justifications[]}"
+  - confidence: "float in [0,1]"
+requires_plan: false
+emits_confidence: true
+confidence_floor: 0.85
+---
+
+# Skill: select-tech-stack
+
+## Purpose
+Choose exactly one language, framework, datastore, and supporting libraries that satisfy every requirement, while honoring any pre-existing stack in the repo. The output binds downstream skills (component contracts, API contracts) to a single technology set; ambiguity here cascades.
+
+## When to invoke
+Invoke when the plan's architecture step requests a tech stack AND requirements are stable (PRD already passed product review). Do NOT invoke to: change a stack on an existing service (use refactor-architecture), pick a single library for a feature (that belongs in the implementing skill), or compare options for human discussion.
+
+## Procedure (follow exactly)
+1. If `detected_stack` is non-empty, treat it as the default. Reuse every field unless a specific requirement makes it impossible.
+2. For each requirement, list which stack component satisfies it (language feature, framework capability, datastore property, library).
+3. If a requirement cannot be satisfied by `detected_stack`, propose the minimal swap (one field) and record a one-sentence justification keyed to the requirement id.
+4. Pick datastore by data shape: relational + transactional → Postgres; document + flexible schema → an existing document store already in use; key/value cache → reuse what is detected.
+5. Emit exactly ONE stack. Never produce "options" or "alternatives". Never recommend bleeding-edge versions; pin to the latest stable major.
+6. Do not invent libraries. Every key library must have a justification tied to a requirement id.
+
+## How to think
+- Detected stack wins unless a requirement is genuinely unsatisfiable. Bias to continuity.
+- "Industry standard" is not a justification; tie every choice to a requirement id.
+- If two requirements conflict on stack (e.g. realtime + simple deploy), STOP and ask human.
+- Prefer boring technology. New = risk.
+
+## Required inputs
+`requirements` must contain at least one functional requirement with an id. `detected_stack` may be empty. If `requirements` is empty, STOP — there is nothing to satisfy.
+
+## Output format
+```
+{
+  "tech_stack": {
+    "language": "...",
+    "framework": "...",
+    "datastore": "...",
+    "key_libraries": ["..."],
+    "runtime": "...",
+    "package_manager": "...",
+    "justifications": [{"choice": "...", "requirement_id": "FR-3", "reason": "..."}]
+  },
+  "confidence": 0.0
+}
+```
+
+## Quality criteria
+Passes if: every field set; every key_library justified by a requirement id; detected_stack overridden only with explicit reason; one stack only.
+Fails if: multiple stacks offered; libraries listed without justification; detected_stack ignored without reason; vague reasons like "best practice".
+
+## Common pitfalls
+- Replacing the detected stack because it feels old. Stay.
+- Listing 10 libraries when 3 suffice. Minimize.
+- Picking a datastore by hype rather than by data shape.
+- Using marketing terms ("blazing fast") instead of requirement ids.
+
+## Examples
+Good: detected_stack is Python+FastAPI+Postgres; output keeps all three, adds `pydantic` justified by FR-2 (schema validation), adds `httpx` justified by FR-7 (outbound calls).
+Bad: detected_stack ignored; output says "Rust because performance"; no requirement id; lists 12 libraries.
+
+## Stop condition
+A single tech_stack object exists with every field populated, every key library carries a requirement-id justification, and either detected_stack is fully reused or each deviation has a recorded reason.
+
+## Confidence guidance
+Lower when: requirements have no NFR ids (≤0.75), two requirements conflict on stack (≤0.7), greenfield with no detected stack (≤0.8), an unfamiliar requirement forces a novel library (≤0.7). Need ≥0.85 to pass.

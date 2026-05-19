@@ -1,0 +1,92 @@
+---
+description: "Skill: write-non-functional-requirements"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: write-non-functional-requirements
+category: prd
+owner_agent: prd-author
+inputs:
+  - functional_requirements: "markdown of the Functional Requirements section"
+outputs:
+  - section: "markdown for the Non-Functional Requirements section, numbered NFR-1.. covering six required categories"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.85
+---
+
+# Skill: write-non-functional-requirements
+
+## Purpose
+Declare numbered, measurable quality attributes the system must satisfy across six required categories. Each NFR is a single measurable claim — every subjective adjective must carry a number.
+
+## When to invoke
+Invoke as PRD section 6, after Functional Requirements exist (because some NFRs scope to particular FRs).
+
+Do NOT invoke to: list functional behaviors (use write-functional-requirements), define metrics for success (use write-success-metrics), or specify implementation (TSD territory).
+
+## Procedure (follow exactly)
+1. Parse `functional_requirements`. Identify FRs that imply load, sensitive data, or special access.
+2. Draft NFRs covering at minimum these six categories. Each category must appear at least once:
+   a. Performance — latency or throughput, p50/p95/p99 as applicable.
+   b. Scalability — peak load assumption (concurrent users, RPS, dataset size).
+   c. Security & privacy — data classification, retention, encryption at rest/in transit, authn/authz.
+   d. Availability — SLO (uptime %, error budget).
+   e. Accessibility — WCAG level (e.g. WCAG 2.2 AA) and assistive tech support.
+   f. Compliance — relevant regs (FERPA, GDPR, HIPAA, SOC2). If none apply, write `NFR-x: No regulated data is processed (rationale: ...)`.
+3. Number sequentially `NFR-1`, `NFR-2`, ...
+4. Every NFR must include a number; subjective adjectives without numbers are forbidden.
+5. If a number is unknown, write `<TBD: source needed>` and lower confidence; do NOT invent.
+
+## How to think
+- Tempted to write "fast page loads" -> add a number ("p95 < 500ms on a Chromebook over 5 Mbps").
+- Compliance unclear -> name the regulatory inquiry as an open question; pick the strictest plausible reg as placeholder and lower confidence.
+- Accessibility "where reasonable" -> name a WCAG level explicitly.
+- Security: don't list controls (those are TSD); list outcomes ("PII at rest is encrypted with AES-256-GCM").
+
+## Required inputs
+`functional_requirements` non-empty markdown. If absent, STOP and route back to write-functional-requirements.
+
+## Output format
+{
+  "section": "## Non-Functional Requirements\n\n- NFR-1 (Performance): ...\n- NFR-2 (Scalability): ...\n- NFR-3 (Security & Privacy): ...\n- NFR-4 (Availability): ...\n- NFR-5 (Accessibility): ...\n- NFR-6 (Compliance): ...\n",
+  "confidence": 0.0
+}
+
+## Quality criteria
+Passes if: all six categories present; every NFR has a measurable number or explicit standard; numbering sequential; tags `(<Category>)` after each NFR id.
+Fails if: any category missing; subjective adjectives without numbers; multiple categories merged into one NFR; tech choices stated.
+
+## Common pitfalls
+- "Highly available" with no SLO.
+- "Reasonable performance" — meaningless.
+- Bundling security and privacy into "secure".
+- Listing every NIST control instead of an outcome.
+
+## Examples
+Good:
+## Non-Functional Requirements
+
+- NFR-1 (Performance): Class-page render completes within p95 < 500ms over a 5 Mbps Chromebook connection.
+- NFR-2 (Scalability): The system supports 50,000 concurrent teacher sessions during the 8am-9am peak.
+- NFR-3 (Security & Privacy): Student PII at rest is encrypted with AES-256-GCM; access requires authenticated teacher with class ownership; retained no longer than 365 days post end-of-school-year.
+- NFR-4 (Availability): 99.9% monthly uptime SLO; error budget consumed events trigger postmortem.
+- NFR-5 (Accessibility): Meets WCAG 2.2 AA on all teacher-facing screens; supports JAWS and VoiceOver.
+- NFR-6 (Compliance): FERPA-compliant data handling; signed DPA with district required before onboarding.
+
+Bad:
+- NFR-1: System should be fast and secure. (no numbers, compound)
+- NFR-2: We will use TLS 1.3. (tech, not outcome)
+
+## Stop condition
+All six categories present under `## Non-Functional Requirements`; every NFR measurable with a number or named standard; confidence reported.
+
+## Confidence guidance
+Lower confidence when:
+- Compliance regime is uncertain -> <= 0.7
+- Performance targets not benchmarked against real users -> <= 0.75
+- Scalability number was inferred from goals not stated -> <= 0.7
+- Accessibility commitment lacks stakeholder sign-off -> <= 0.75
+Confidence >= 0.85 is required to proceed without human review.

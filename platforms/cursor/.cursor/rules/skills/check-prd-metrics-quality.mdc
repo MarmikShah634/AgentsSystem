@@ -1,0 +1,103 @@
+---
+description: "Skill: check-prd-metrics-quality"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: check-prd-metrics-quality
+category: prd
+owner_agent: prd-reviewer
+inputs:
+  - prd_path: "absolute path to the PRD file under docs/prd/"
+outputs:
+  - findings: "list of {section, kind, msg, fix} entries, one per defective metric"
+  - verdict: "'pass' if every metric has all four fields and a goal mapping else 'revise'"
+  - readiness_score: "float in [0,1] for this dimension"
+  - confidence: "float in [0,1]"
+requires_plan: true
+emits_confidence: true
+confidence_floor: 0.95
+---
+
+# Skill: check-prd-metrics-quality
+
+## Purpose
+Audit every entry in the Success Metrics section for the four mandatory fields (baseline, target, window, source), reject vanity metrics, and verify each metric maps back to a stated goal. Findings only; never rewrite.
+
+## When to invoke
+Invoke after `check-prd-completeness` passes. Can run in parallel with the other PRD review skills.
+
+Do NOT invoke to: judge goal quality (use check-prd-conflicts), score readiness (use score-prd-readiness), or fix the metrics (review only).
+
+## Procedure (follow exactly)
+1. Read `prd_path`. Extract the Success Metrics section and the Goals & Non-Goals section.
+2. Parse each metric entry. Expected structure (per `write-success-metrics`):
+   - `Metric`: name
+   - `Baseline`: value + date
+   - `Target`: value + measurement window
+   - `Source`: event / dashboard / query
+   Plus the parent `Goal` it lives under.
+3. For each metric emit a finding with kind from this enum if defective:
+   - `missing-field` — any of {Baseline, Target, Source, parent Goal link} absent.
+   - `vanity` — measures a total without a rate (e.g. "total signups" with no per-period rate or conversion).
+   - `unmapped` — metric has no parent goal in the Goals & Non-Goals section.
+   - `direction-mismatch` — target direction contradicts the goal (goal says "reduce X", target raises X).
+   - `unmeasurable` — Source field names a system that does not exist in the project today, OR is "TBD".
+4. For each finding include a one-sentence `fix` (clarifying directive, NOT a rewrite).
+5. Verdict `pass` iff zero findings. Otherwise `revise`.
+6. `readiness_score` = 1.0 - 0.10 * count(findings), floor 0.0.
+
+## How to think
+- A metric without a baseline but with a stated "currently unmeasured" disclaimer -> still flag as `missing-field`; the disclaimer doesn't make it measurable.
+- "Total signups" with target "increase by 20% MoM" -> NOT vanity, it carries a rate.
+- A metric mapped to a non-goal -> flag as `unmapped` (non-goals are not goals).
+- Borderline source ("Mixpanel — to be configured") -> flag as `unmeasurable`; lower confidence.
+- Multiple defects on one metric -> single finding listing all kinds in `msg`, not multiple findings.
+- NEVER rewrite. The `fix` is direction only.
+
+## Required inputs
+`prd_path` readable; Success Metrics and Goals & Non-Goals sections present. If either missing, STOP and route back to check-prd-completeness.
+
+## Output format
+{
+  "findings": [
+    {"section": "Success Metrics", "kind": "missing-field|vanity|unmapped|direction-mismatch|unmeasurable", "msg": "<metric name>: <specific defect with field names>", "fix": "<one sentence clarifying directive>"}
+  ],
+  "verdict": "pass|revise",
+  "readiness_score": 0.0,
+  "confidence": 0.0
+}
+
+## Quality criteria
+Passes if: every metric examined; defects cited with the metric name and field; fixes are concrete directives, not rewrites; verdict and score consistent with findings.
+Fails if: metrics skipped; vague findings without metric names; kinds invented; rewrites embedded in the `fix`; verdict inconsistent.
+
+## Common pitfalls
+- Flagging a real rate metric ("p95 latency") as vanity because the name contains "total".
+- Missing the goal mapping check — a metric can have all four fields but no goal.
+- Counting "TBD" in Source as acceptable.
+- Suggesting which instrumentation to add — that's an architecture decision.
+
+## Examples
+Good finding:
+{"section": "Success Metrics", "kind": "missing-field", "msg": "Time-to-first-quiz: Baseline absent.", "fix": "Capture the current median time-to-first-quiz before merging."}
+
+Good finding:
+{"section": "Success Metrics", "kind": "vanity", "msg": "Total signups: no rate/window. Target '10000 signups' has no time bound.", "fix": "Convert to a rate (per month) or pair with a conversion ratio."}
+
+Good finding:
+{"section": "Success Metrics", "kind": "unmapped", "msg": "Daily active users metric does not map to any goal in Goals & Non-Goals.", "fix": "Either add a goal that DAU measures, or drop the metric."}
+
+Bad finding:
+{"section": "Success Metrics", "kind": "wrong", "msg": "I rewrote it", "fix": "..."} (kind invented, rewrites)
+
+## Stop condition
+Every metric examined; findings emitted only for defective ones; verdict and readiness_score consistent; confidence reported.
+
+## Confidence guidance
+Lower confidence when:
+- Metric structure varies from the template -> <= 0.9
+- Goal mapping is implicit rather than explicit -> <= 0.9
+- "Vanity vs rate" is borderline judgment -> <= 0.9
+- Source names a system whose existence is uncertain -> <= 0.85
+Confidence >= 0.95 is required to proceed without human review.
