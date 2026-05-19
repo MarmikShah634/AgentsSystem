@@ -3,29 +3,68 @@ id: evaluate-spacing-rhythm
 category: design
 owner_agent: designer
 inputs:
-  - target_path
+  - target_path: "absolute path to a component, template, or CSS file to audit"
 outputs:
-  - findings
+  - findings: "array of {area, severity, path, line, msg, fix}"
+  - verdict: "'pass' | 'revise'"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: evaluate-spacing-rhythm
 
-## Task
+## Purpose
+Audit spacing as a designed rhythm rather than a default. Per the impeccable principle, identical spacing across siblings is a tell of unintentional layout; this skill emits findings the frontend agent uses to fix the rhythm.
 
-Flag UI regions that use uniform / default spacing. Enforce intentional
-variance (impeccable principle: spacing rhythm is a design decision, not
-a default).
+## When to invoke
+Invoke when `target_path` resolves to a UI surface with layout responsibilities (component, page, template).
+Do NOT invoke to: evaluate type (use audit-typography-scale), color (use pick-color-palette-oklch), or motion (use tune-motion-physics).
 
-## Checklist
+## Procedure (follow exactly)
+1. Parse the file. Enumerate sibling groups (children of the same parent layout container).
+2. For each group, collect each child's vertical gap (margin-top, padding-top, gap, space-y).
+3. Flag (severity=warn) any group where every direct child uses the same vertical gap token.
+4. Flag (severity=warn) any layout where the horizontal gap equals the vertical gap (uniform 2D grid rhythm).
+5. Flag (severity=error) any card grid where every card has identical dimensions AND identical surrounding gaps AND no hero/anchor variant.
+6. For every finding, attach a concrete `fix` naming the element and the suggested rhythm change (e.g., "increase top gap of `<section data-id='hero'>` to 3× sibling gap").
+7. Set `verdict = "pass"` if zero error-level findings, else `"revise"`.
 
-1. Inspect padding/margin tokens across siblings.
-2. Flag any group where every direct child uses the same vertical gap.
-3. Flag any layout where vertical and horizontal gaps share one value.
-4. Flag any "card grid" with identical card dimensions and gaps.
+## How to think
+- Group of 2 children with identical gap → not enough signal; do not flag.
+- Card grid intentionally uniform (table-like data) → still flag warn, let frontend justify or fix.
+- Variable spacing already present (e.g., one child has `mt-12`, others `mt-4`) → pass.
+- Spacing comes from a design-token alias (`space.section`) → inspect the resolved value, not the token name.
+
+## Required inputs
+`target_path` must exist and contain layout markup or CSS. Missing or empty → STOP.
+
+## Output format
+```json
+{"findings":[
+  {"area":"spacing","severity":"warn","path":"src/Home.tsx","line":42,
+   "msg":"All 4 sibling sections share `mt-8`.",
+   "fix":"raise hero section to `mt-24` to establish a primary rhythm."}],
+ "verdict":"revise","confidence":0.0}
+```
+
+## Quality criteria
+Passes if: every flagged region cites `path` + `line`; every finding includes a concrete `fix`; verdict respects error-presence rule; no rewrite of the file performed.
+Fails if: vague fix ("add more spacing"); missing line numbers; flagging when ≤2 siblings; verdict pass with error-level findings.
+
+## Common pitfalls
+- Auditing token names rather than resolved values.
+- Flagging deliberate table/list rhythms without considering context.
+- Issuing "increase spacing" without quantifying.
+- Skipping horizontal gap audit.
+
+## Examples
+✅ Finding: warn, line 42, msg "all hero subsections share `mt-8`", fix "raise the lead section to `mt-24` for a 3:1 rhythm".
+❌ Anti-pattern: "spacing feels off" with no measurements, no path, no fix.
 
 ## Stop condition
+Every sibling group evaluated against the four rules; findings cite path+line+fix; verdict matches error presence.
 
-Every flagged region has a concrete `fix` suggestion (e.g. "increase top
-gap of `<section>` to 3× others to create a hero rhythm").
+## Confidence guidance
+Lower when: file uses CSS-in-JS with dynamic values (≤0.75), resolved tokens unavailable (≤0.7), unusually small file (≤0.8). ≥0.85 required.
