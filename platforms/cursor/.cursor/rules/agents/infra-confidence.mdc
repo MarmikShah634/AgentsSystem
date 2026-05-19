@@ -18,9 +18,18 @@ sensitive_surfaces: []
 
 ## Mission
 
-Deterministic. Given `confidence` and `touched_paths`, decide whether to
-proceed or escalate to a human. Encodes the 0.90 floor and the
-sensitive-surface globs.
+Deterministic. Given `confidence`, `touched_paths`, and the calling
+`actor_agent`, decide whether to proceed or escalate to a human.
+
+## Two gates
+
+1. **Sensitive-surface gate** — paths matching the sensitive globs
+   require human approval. Exception: a surface may have an
+   *owner agent* (see `DEFAULT_OWNERSHIP` in the Python body); that owner
+   can write without escalation. Any other actor still escalates.
+2. **Confidence floor** — if `confidence < floor` (default 0.90) →
+   escalate. Reviewers and auditors raise to 0.95. The owner bypass on
+   the surface gate does NOT bypass this gate.
 
 ## Implementation
 

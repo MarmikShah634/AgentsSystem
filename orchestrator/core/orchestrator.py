@@ -73,7 +73,9 @@ class Orchestrator:
         dur = int((time.time() - t0) * 1000)
 
         gate = self.invoke("infra-confidence", "evaluate-confidence", {
-            "confidence": confidence, "touched_paths": touched,
+            "confidence": confidence,
+            "touched_paths": touched,
+            "actor_agent": step["agent"],
         })["decision"]
 
         escalated = False

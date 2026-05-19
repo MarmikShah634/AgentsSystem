@@ -29,12 +29,22 @@ host-specific operational notes; they never override the rules below.
 
 ## 4. Sensitive-Surface Gating
 
-The following globs are **always** human-gated regardless of confidence:
+The following globs require human approval — with one nuance:
 
 - `secrets/**`, `infra/**`, `migrations/**`
 - `**/.env*`, `**/Dockerfile`, `**/*.tf`
 - `**/openapi.yaml`, `**/openapi.yml`
 - `docs/prd/**`, `docs/tsd/**`, `docs/sprints/**`
+
+**Ownership exception.** Some surfaces have a designated owner agent
+that can write them without escalation (`prd-author` owns `docs/prd/**`,
+`tech-spec-author` owns `docs/tsd/**`, `sprint-planner` owns
+`docs/sprints/**`). Any *other* actor touching the same path still
+escalates. The confidence floor (§3) applies independently — owners
+still escalate on low confidence.
+
+Surfaces with no declared owner (secrets, infra, env, Dockerfile, tf,
+openapi) are human-gated for **every** actor.
 
 ## 5. Spec Cascade
 

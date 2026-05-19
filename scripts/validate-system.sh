@@ -27,4 +27,13 @@ if unused:
     print(f"WARN: agents with no skills: {sorted(unused)}")
 PY
 
+echo "[validate] skill files within 250-line cap"
+OVER=$(find skills -name SKILL.md -exec wc -l {} + \
+       | awk '$2 != "total" && $1 > 250 { print $0 }')
+if [[ -n "$OVER" ]]; then
+  echo "FAIL: skill files exceed 250 lines (single-task should be small):" >&2
+  echo "$OVER" >&2
+  exit 1
+fi
+
 echo "[validate] all checks passed"
