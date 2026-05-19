@@ -9666,16 +9666,51 @@ running through the Codex CLI in this repository.
     
     **Usage:** `/start-bugfix <bug-description>`
     
-    Sequence:
+    Bugfix flow. The defining invariant: a failing regression test exists
+    BEFORE any fix lands. The planner enforces this by sequencing the steps
+    below in order.
     
-    1. `planner` → `decompose-task` (emits at least these steps)
-    2. `tester` → `generate-regression-test` (must fail)
-    3. `frontend` → `fix-frontend-bug` OR `backend` → `fix-backend-bug`
-       (router picks based on `touched_paths`)
-    4. `tester` → `run-tests` (regression now passes; everything else green)
-    5. `reviewer` → `code-review`
-    6. `security` → `security-scan`
-    7. `docs` → `changelog-entry`
+    ## Preconditions
+    
+    - The bug description names: symptom, reproduction steps, expected vs.
+      actual outcome.
+    - The repo's test suite currently passes (otherwise we cannot tell what
+      the new regression broke).
+    - If the bug touches a sensitive surface, the human gate fires at step 4
+      regardless of confidence.
+    
+    If the bug description lacks reproduction steps, STOP and ask the human.
+    
+    ## Sequence
+    
+    1. `planner` → `decompose-task` + `sequence-dependencies` — emits at
+       least the four steps below, with the test step pairing the fix step.
+    2. `tester` → `generate-regression-test` — writes a test that fails
+       against current code AND fails for the correct reason (run once to
+       confirm). If the test passes against current code, the bug isn't a
+       bug; halt and ask the human.
+    3. Router determines tier by inspecting which files would change:
+       - UI-tier paths → `frontend` → `fix-frontend-bug`
+       - Server-tier paths → `backend` → `fix-backend-bug`
+       - Both tiers → emit two paired fix steps in dependency order
+    4. `tester` → `run-tests` — the regression test now passes; ALL other
+       tests remain green. Any flake or unrelated breakage halts the flow.
+    5. `reviewer` → `code-review` — checks the fix is minimum-diff and does
+       not refactor surrounding code.
+    6. `security` → `security-scan` + `secret-scan` — runs on every patch.
+    7. `accessibility-auditor` (UI fixes) — runs all five WCAG checks.
+    8. `performance-auditor` (perf-sensitive fixes) — re-runs the budget
+       audit on the affected surface.
+    9. `docs` → `changelog-entry` — one line per user-visible fix.
+    
+    ## Gating
+    
+    - `infra-confidence` fires at every step. Floor 0.85; reviewers/auditors
+      at 0.95.
+    - The fix step is BLOCKED until the regression test exists and is
+      confirmed failing. The orchestrator does not skip step 2 even if the
+      agent claims it knows the fix.
+    - Sensitive-surface touches escalate to human regardless of confidence.
 
 ### Command: /start-feature
 
@@ -9684,28 +9719,51 @@ running through the Codex CLI in this repository.
     
     **Usage:** `/start-feature <goal>`
     
-    Runs the full lifecycle:
+    Single-feature flow for projects that already have a validated PRD and
+    TSD. For a brand-new product, use `/start-product` instead — it runs the
+    full PRD-first lifecycle.
     
-    1. `requirements` → `gather-user-stories`
-    2. `requirements` → `extract-acceptance-criteria`
-    3. `requirements` → `validate-requirements`
-    4. `architect` → `select-tech-stack`
-    5. `architect` → `generate-architecture-diagram`
-    6. `architect` → `design-data-model`
-    7. `planner` → `decompose-task` (+ `sequence-dependencies`)
-    8. For each step in the plan:
+    ## Preconditions
+    
+    - `docs/prd/<slug>.md` exists and has been verdict-passed by `prd-reviewer`.
+    - `docs/tsd/<slug>.md` exists and has been verdict-passed by `tech-spec-reviewer`.
+    - The architecture has not changed since the TSD was approved.
+    
+    If any of the above is missing, STOP and route to `/start-product`.
+    
+    ## Sequence
+    
+    1. `architect` → `select-tech-stack` — confirm the existing stack still
+       covers the new feature; flag any new dependency for human gate.
+    2. `sprint-planner` → `group-prd-into-epics` → `decompose-epic-into-stories`
+       → `estimate-story-points` → `sequence-sprints` → `assign-sprint-goals`
+       — emits a 1-sprint plan scoped to the feature. (If the feature would
+       need more than one sprint, this command exits with `revise` and asks
+       the human to switch to `/start-product`.)
+    3. `sprint-reviewer` → `check-sprint-balance` + `check-sprint-dependencies`
+       + `check-sprint-goal-coherence` + `score-sprint-plan-quality`.
+    4. `planner` → `decompose-task` + `estimate-effort` + `sequence-dependencies`
+       — emits the canonical task plan with every coding step paired to a
+       testing step.
+    5. For each step in the plan (orchestrator iterates):
+       - `designer` → applicable design skills (UI steps only)
        - `frontend` or `backend` → tier-appropriate implementation skill
-       - `designer` → `detect-ai-slop-patterns` + `audit-typography-scale` +
-         other design checks (UI steps only)
-       - `tester` → matching testing skill
-       - `tester` → `run-tests`
+       - `tester` → matching testing skill + `run-tests`
        - `reviewer` → `code-review`
-       - `security` → `security-scan` + `secret-scan`
-    9. `docs` → `update-readme` + `changelog-entry`
-    10. `devops` → `build-artifact`
-    11. `deployer` → `deploy-environment` (human-gated)
+       - `security` → `security-scan` + `secret-scan` (any patch)
+       - `accessibility-auditor` → all five WCAG checks (UI steps)
+       - `performance-auditor` → bundle/render/network/CWV (UI or perf-sensitive)
+    6. `docs` → `update-readme` (if a documented surface changed) +
+       `changelog-entry`.
+    7. `devops` → `build-artifact`.
+    8. `deployer` → `deploy-environment` (always human-gated for prod).
     
-    Confidence gate fires at every step.
+    ## Gating
+    
+    - `infra-confidence` fires at every step. Floor 0.85; reviewers/auditors/deployer
+      at 0.95.
+    - Sensitive surfaces (per `SPEC.md` §4) escalate to human regardless of confidence.
+    - Migrations are human-gated even when written by their owner agent.
 
 ### Command: /start-product
 
