@@ -16,7 +16,7 @@ from __future__ import annotations
 import fnmatch
 from dataclasses import asdict, dataclass
 
-DEFAULT_FLOOR = 0.90
+DEFAULT_FLOOR = 0.85
 
 # All sensitive globs. Order matters for diagnostics only.
 DEFAULT_SENSITIVE_GLOBS = [

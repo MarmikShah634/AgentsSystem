@@ -6,7 +6,7 @@ owns:
 hands_off_to:
   - security
   - docs
-confidence_floor: 0.90
+confidence_floor: 0.85
 sensitive_surfaces: []
 ---
 

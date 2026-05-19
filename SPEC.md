@@ -23,7 +23,7 @@ host-specific operational notes; they never override the rules below.
 ## 3. Confidence Gating
 
 - Every agent response carries a `confidence` in `[0.0, 1.0]`.
-- `infra-confidence` evaluates against a floor (default **0.90**;
+- `infra-confidence` evaluates against a floor (default **0.85**;
   reviewers and auditors raise to **0.95**).
 - Below floor → escalate to human via the human responder.
 

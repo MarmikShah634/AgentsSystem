@@ -65,7 +65,7 @@ externally via its Python API.
 2. **Plan before execute** — no step runs without a persisted plan.
 3. **Spec cascade** — PRD → TSD → sprints → tasks → code. Coding agents
    implement the TSD verbatim.
-4. **Confidence gating** — <0.90 (or <0.95 for reviewers/auditors) →
+4. **Confidence gating** — <0.85 (or <0.95 for reviewers/auditors) →
    human-in-loop.
 5. **Sensitive surface gating** — secrets, infra, migrations, spec docs
    are always human-gated regardless of confidence.
@@ -312,7 +312,7 @@ escalation prompt to the human.
 
 | Floor | Agents |
 |---|---|
-| 0.90 (default) | most LLM agents |
+| 0.85 (default) | most LLM agents |
 | 0.95 | `prd-reviewer`, `tech-spec-reviewer`, `sprint-reviewer`, `security`, `accessibility-auditor`, `performance-auditor`, `deployer` |
 
 **Sensitive surfaces are always human-gated** regardless of confidence:

@@ -5,7 +5,7 @@
 - **End-to-end automation** of the software development lifecycle.
 - **One responsibility per component** (skill, agent, hook).
 - **Plan-driven execution** — no agent acts without a written plan.
-- **Confidence-gated** — human-in-loop below 90% confidence or on sensitive
+- **Confidence-gated** — human-in-loop below 85% confidence or on sensitive
   surfaces.
 - **Provable trail** — every action produces an audit log entry.
 - **Portable** — same definitions drive Claude, Cursor, Antigravity, Codex.
@@ -56,14 +56,14 @@ Each agent is a markdown spec under `agents/` with YAML frontmatter:
 
 ```yaml
 ---
-id: coder
-role: "Implementation engineer"
+id: backend
+role: "Backend implementation engineer"
 owns:
-  - skills/coding/*
+  - skills/backend/*
 hands_off_to:
   - tester
   - reviewer
-confidence_floor: 0.90
+confidence_floor: 0.85
 sensitive_surfaces:
   - infra/**
   - secrets/**
@@ -98,9 +98,9 @@ A skill does **exactly one task**. Each lives in
 
 ```yaml
 ---
-id: implement-function
-category: coding
-owner_agent: coder
+id: implement-endpoint
+category: backend
+owner_agent: backend
 inputs:
   - file_path
   - function_spec
@@ -122,7 +122,7 @@ They are wired into each platform via `scripts/sync-platforms.sh`.
 | Hook | When |
 |------|------|
 | `pre-task-plan.sh` | Before any task — fails if no plan exists |
-| `confidence-gate.sh` | After agent response — fails if confidence<0.90 |
+| `confidence-gate.sh` | After agent response — fails if confidence<0.85 |
 | `post-task-log.sh` | After any task — appends an audit record |
 | `post-edit-test.sh` | After code edit — ensures a test exists |
 | `pre-commit-test.sh` | Before commit — runs the test suite |
@@ -140,12 +140,12 @@ the orchestrator.
 1. Human: /start-feature "Add OAuth login"
 2. Orchestrator → requirements agent → gather-user-stories skill
    → emits plan + confidence
-3. Confidence gate: if <0.90 → ask human; else continue
+3. Confidence gate: if <0.85 → ask human; else continue
 4. Orchestrator → architect agent → select-tech-stack skill
 5. Orchestrator → planner agent → decompose-task skill
    → emits ordered task list (each pairs implementation + test)
 6. For each task:
-   a. coder agent → implement-function skill
+   a. backend agent → implement-endpoint skill (or frontend agent → implement-component skill)
    b. tester agent → generate-unit-test skill
    c. tester agent → generate-puppeteer-test (if UI)
    d. tester agent → run-tests skill
@@ -169,8 +169,8 @@ Each arrow logs to `logs/audit/`. Plans are persisted under `logs/plans/`.
   "steps": [
     {
       "step_id": "1",
-      "agent": "coder",
-      "skill": "implement-function",
+      "agent": "backend",
+      "skill": "implement-endpoint",
       "inputs": {...},
       "expected_outputs": [...],
       "depends_on": [],
@@ -188,8 +188,8 @@ Each arrow logs to `logs/audit/`. Plans are persisted under `logs/plans/`.
   "ts": "iso8601",
   "plan_id": "uuid",
   "step_id": "1",
-  "agent": "coder",
-  "skill": "implement-function",
+  "agent": "backend",
+  "skill": "implement-endpoint",
   "inputs_sha256": "...",
   "outputs_sha256": "...",
   "confidence": 0.93,
@@ -210,7 +210,7 @@ or copy the relevant `platforms/<tool>/` subtree into their repo.
 
 Each agent response **must** include a `confidence` field. The orchestrator
 treats responses without `confidence` as `confidence = 0.0` (i.e. always
-escalate). The default floor is `0.90`. The floor can be raised per-agent in
+escalate). The default floor is `0.85`. The floor can be raised per-agent in
 the agent's frontmatter.
 
 Sensitive surfaces (`secrets/**`, `infra/**`, `migrations/**`, public API

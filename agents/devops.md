@@ -6,7 +6,7 @@ owns:
   - skills/deploy/configure-ci
 hands_off_to:
   - deployer
-confidence_floor: 0.90
+confidence_floor: 0.85
 sensitive_surfaces:
   - infra/**
   - .github/workflows/**

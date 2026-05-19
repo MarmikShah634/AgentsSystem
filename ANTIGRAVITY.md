@@ -32,6 +32,6 @@ slot (see `config.yaml`).
 
 ## Confidence + sensitive surfaces
 
-`config.yaml` sets `confidence_floor: 0.90` and declares the same
+`config.yaml` sets `confidence_floor: 0.85` and declares the same
 sensitive globs as `SPEC.md` §4. Antigravity agents are expected to honour
 both.

@@ -3,25 +3,61 @@ id: write-component-contracts
 category: tsd
 owner_agent: tech-spec-author
 inputs:
-  - architecture
+  - architecture: "Object with components[], tech_stack, and mermaid_diagram from the architect"
 outputs:
-  - section
+  - section: "Markdown for the TSD Component Contracts section"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: write-component-contracts
 
-## Task
+## Purpose
+For every component in the architecture, document the four binding fields a coding agent needs: public interface, invariants, dependencies, failure modes. After this section, an implementer should never have to ask "what does this component do" or "what can go wrong".
 
-For each component, document:
+## When to invoke
+Invoke after the Overview section is written and before Data/API Contracts. Do NOT invoke to: implement the component (use implement-service), describe HTTP endpoints (those go in API Contracts), or write tests.
 
-- Public interface (functions / methods with signatures).
-- Invariants (always-true properties).
-- Dependencies (named other components).
-- Failure modes (what it returns / raises on each failure).
+## Procedure (follow exactly)
+1. List components in the same order as the architecture diagram.
+2. For each component emit a `### <Name>` subsection containing:
+   - **Public interface**: every function/method with full typed signature. No `Any`, no `**kwargs` unless forwarded verbatim. No private members.
+   - **Invariants**: bullet list of always-true properties (e.g. "queue length never exceeds 10000", "idempotency key required on writes").
+   - **Dependencies**: bullet list naming OTHER components from the architecture; never invent.
+   - **Failure modes**: bullet list pairing each failure with its return value or raised error code (stable id like `QUEUE_FULL`).
+3. Use language-neutral type syntax (`fn fetch(user_id: uuid) -> User | NotFound`). Do not commit to a specific framework here.
+4. Cross-link failure mode codes to the future Error Model section by code id.
+
+## How to think
+- If a method's signature is unclear, STOP and ask architect; do not invent.
+- Invariants are checkable assertions, not aspirations. Avoid "fast" or "robust".
+- Dependencies must match component names exactly. Renaming breaks the diagram.
+- Each failure mode must have a recovery rule (return null, retry, raise to caller).
+
+## Required inputs
+`architecture` must contain a non-empty `components` list with at least name + role per entry. If a component has no role description, STOP.
+
+## Output format
+Markdown starting with `## Component Contracts`, one `### <Name>` per component, each with the four bolded fields. No tables required, bullet lists fine.
+
+## Quality criteria
+Passes if: every component has all four fields populated; signatures are typed; dependency names match the diagram; every failure mode has a code and a recovery rule.
+Fails if: any field empty; method signature missing types; invented dependency; vague invariants ("should be reliable").
+
+## Common pitfalls
+- Listing private helpers in the public interface.
+- Writing invariants that are not testable.
+- Failure modes without codes — the error model can't index them later.
+- Coupling to a specific framework (`@app.route` here).
+
+## Examples
+Good: `fn enqueue(job: Job) -> JobId | QUEUE_FULL` with invariant "queue size ≤ MAX_QUEUE" and recovery "caller retries with backoff".
+Bad: `enqueue(job)` with no return, invariant "should work", no failure modes.
 
 ## Stop condition
+Section exists with one subsection per component, all four fields populated for each, every failure mode carries a stable code, and a coding agent could implement any component without asking follow-up questions.
 
-Every component in the architecture has all four fields populated. A
-coding agent should be able to implement it without follow-up questions.
+## Confidence guidance
+Lower when: architecture didn't pre-define methods (≤0.75), failure modes are guessed (≤0.7), >10 components (≤0.8 — risk of inconsistency), dependencies form cycles (≤0.6). Need ≥0.85.

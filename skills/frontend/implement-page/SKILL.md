@@ -3,24 +3,84 @@ id: implement-page
 category: frontend
 owner_agent: frontend
 inputs:
-  - route
-  - layout_spec
-  - data_dependencies
+  - route: "URL pattern, e.g. /users/:id"
+  - layout_spec: "named layout + slot map, or path to layout component"
+  - data_dependencies: "list of {client_fn, params, key} entries"
+  - tsd_section: "file path + anchor to the TSD's page contract"
 outputs:
-  - patch
+  - patch: "unified diff of changes"
+  - touched_paths: "list of files modified or created"
+  - rationale: "1-3 sentences"
+  - confidence: "float in [0,1]"
 requires_plan: true
 emits_confidence: true
+confidence_floor: 0.85
 ---
 
 # Skill: implement-page
 
-## Task
+## Purpose
+Compose one route-level page that wires existing components to existing API client functions through the project's configured data layer (React Query, SWR, Next loaders, Nuxt `useAsyncData`, etc.). Render loading, empty, error, and success states explicitly.
 
-Compose one route-level page from existing components. Wire data
-dependencies through the configured client (React Query / SWR / loaders).
-Do NOT author new components inline — call `implement-component` first.
+## When to invoke
+Invoke when the plan step is implement a page AND every component referenced already exists AND every `data_dependencies[*].client_fn` already exists in the API client layer. Reject otherwise — call `implement-component` or `integrate-api-client` first.
+
+## Procedure (follow exactly)
+1. Resolve the page file path from the framework's routing convention (`app/users/[id]/page.tsx`, `pages/users/[id].vue`, `src/routes/users/[id]/+page.svelte`). Do not invent a different convention.
+2. Read the TSD page contract. If any data state (empty, partial error) is unspecified, STOP and ask human.
+3. Import existing components and the existing layout from `layout_spec`. Never inline a new component definition — call `implement-component` first as a separate step.
+4. Wire each entry in `data_dependencies` through the project's configured client (`useQuery`, `useSWR`, loader, fetcher) using the declared cache key. Do not call `fetch` directly.
+5. Render four branches in order: loading → error → empty → ok. Empty and error must reuse existing fallback components if present.
+6. Wire user actions (submit, delete) to mutations from the same data layer; never bypass to `axios.post`.
+7. Run the paired Puppeteer/Playwright test. If it fails, fix the page, never the test.
+
+## How to think
+- Page needs a brand-new component → reject this step; planner must add `implement-component` first.
+- Auth-gated route → wrap with the project's existing route-guard; never roll new auth.
+- Cache key collision risk → use a tuple including route params; do not stringify ad-hoc.
+- SSR vs CSR ambiguous in TSD → match the framework's default for the route type.
+
+## Required inputs
+All four fields non-empty. Every `client_fn` must resolve to an existing function. Every component in `layout_spec` must exist.
+
+## Output format
+{"patch": "unified diff", "touched_paths": ["app/users/[id]/page.tsx", "tests/e2e/users.spec.ts"], "rationale": "1-3 sentences", "confidence": 0.0}
+
+## Quality criteria
+Passes if: route resolves; loading/empty/error/ok all render; no inline `fetch`; no new component definitions; Puppeteer test green; a11y landmarks present (`main`, `header`).
+Fails if: defines new components inline; bypasses data layer; missing a state branch; touches server-tier files.
+
+## Common pitfalls
+- Skipping the empty state because "the list is never empty in practice". Render it anyway.
+- Calling `fetch` in `useEffect`. Use the configured data hook.
+- Hardcoding route params instead of reading from the router.
+
+## Examples
+Next.js App Router:
+```tsx
+export default function UserPage({ params }: { params: { id: string } }) {
+  const { data, error, isLoading } = useQuery({
+    queryKey: ['user', params.id],
+    queryFn: () => userClient.get(params.id),
+  });
+  if (isLoading) return <Spinner />;
+  if (error) return <ErrorState error={error} />;
+  if (!data) return <EmptyState resource="user" />;
+  return <UserDetailLayout user={data} />;
+}
+```
+
+Anti-pattern:
+```tsx
+export default function UserPage() {
+  const [u, setU] = useState<any>();
+  useEffect(() => { fetch('/api/user').then(r => r.json()).then(setU); }, []); // bypass data layer
+  return <div>{u?.name ?? 'loading'}</div>;                                    // no error/empty
+}
+```
 
 ## Stop condition
+Page renders at `route`; all four data states verified; paired Puppeteer test passes; no new component or client function introduced.
 
-Page loads at `route`, renders all data states (loading/empty/error/ok),
-and the paired Puppeteer test passes.
+## Confidence guidance
+Lower when: TSD states underspecified (≤0.7), data hook semantics unclear (≤0.75), SSR/CSR ambiguous (≤0.75), unfamiliar router (≤0.8). Floor 0.85 to proceed.
