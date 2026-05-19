@@ -1,0 +1,3 @@
+id: infra-stack-detector
+source: ../../agents/infra-stack-detector.md
+kind: agent

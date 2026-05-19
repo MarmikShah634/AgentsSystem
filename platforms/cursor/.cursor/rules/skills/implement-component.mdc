@@ -1,0 +1,30 @@
+---
+description: "Skill: implement-component"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: implement-component
+category: frontend
+owner_agent: frontend
+inputs:
+  - component_name
+  - props_schema
+  - file_path
+outputs:
+  - patch
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: implement-component
+
+## Task
+
+Author one reusable UI component with the named props. No business logic,
+no data fetching — pure presentation + local interaction.
+
+## Stop condition
+
+Component renders in isolation (Storybook/test harness) for each prop
+shape in the paired unit test.

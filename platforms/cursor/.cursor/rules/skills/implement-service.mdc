@@ -1,0 +1,28 @@
+---
+description: "Skill: implement-service"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: implement-service
+category: backend
+owner_agent: backend
+inputs:
+  - service_name
+  - method_specs
+outputs:
+  - patch
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: implement-service
+
+## Task
+
+Write one service class/module containing business logic for `service_name`.
+No HTTP, no SQL — depend on injected repositories/clients.
+
+## Stop condition
+
+Each method has a passing unit test that mocks its dependencies.

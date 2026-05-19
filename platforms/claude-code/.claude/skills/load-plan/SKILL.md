@@ -1,0 +1,15 @@
+---
+id: load-plan
+category: infra
+owner_agent: infra-logger
+inputs:
+  - plan_id
+outputs:
+  - plan
+requires_plan: false
+emits_confidence: false
+---
+
+# Skill: load-plan
+
+Read a plan from `logs/plans/<plan_id>.json`.

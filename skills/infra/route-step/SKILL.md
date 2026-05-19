@@ -1,0 +1,18 @@
+---
+id: route-step
+category: infra
+owner_agent: infra-router
+inputs:
+  - step
+outputs:
+  - response
+requires_plan: false
+emits_confidence: false
+---
+
+# Skill: route-step
+
+Dispatch one plan step to its owner agent and return the raw response.
+
+Pre-checks: skill exists in registry; `step.agent` matches the skill's
+owner. Otherwise raises.

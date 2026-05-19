@@ -1,0 +1,30 @@
+---
+id: enforce-interaction-states
+category: design
+owner_agent: designer
+inputs:
+  - target_path
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: enforce-interaction-states
+
+## Task
+
+Every interactive surface must ship four states. Flag any missing.
+
+## Required states
+
+1. **Loading** — skeleton, spinner, or progress.
+2. **Empty** — meaningful empty state with a next action, never blank.
+3. **Error** — user-readable message + a retry/recover affordance.
+4. **Tactile feedback** — `:hover`, `:focus-visible`, `:active`
+   distinguishable styles + pressed-state animation for buttons.
+
+## Stop condition
+
+Findings name the missing state and the file/line of the affected
+component.

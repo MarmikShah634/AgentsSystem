@@ -5,8 +5,8 @@ globs: ["**/*"]
 ---
 ---
 id: implement-endpoint
-category: coding
-owner_agent: coder
+category: backend
+owner_agent: backend
 inputs:
   - route
   - method
@@ -22,11 +22,11 @@ emits_confidence: true
 
 ## Task
 
-Add one HTTP endpoint matching the schemas. Wire it into the router using
-the framework's idiomatic mechanism. Validate the request, return the
-response, and reject malformed input.
+Add one HTTP endpoint matching the schemas. Validate the request, return
+the response, reject malformed input. Wire via the framework's idiomatic
+router. No business logic inline — call into `implement-service`.
 
 ## Stop condition
 
-Endpoint is reachable from the framework's test client and returns the
-expected status codes for the schema cases.
+Endpoint reachable from the framework test client; paired integration
+test asserts every status code in the schema.

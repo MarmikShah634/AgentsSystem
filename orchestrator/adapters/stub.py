@@ -1,10 +1,4 @@
-"""Stub runtime adapter used for local tests of the orchestrator.
-
-Real adapters delegate to the host (Claude/Cursor/Antigravity/Codex) by
-shelling out to the respective CLI; this stub returns a deterministic
-high-confidence response so end-to-end orchestrator wiring can be tested
-without an LLM in the loop.
-"""
+"""Deterministic LLM adapter stub for tests."""
 
 from __future__ import annotations
 

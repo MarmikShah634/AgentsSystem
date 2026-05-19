@@ -1,0 +1,23 @@
+---
+id: fix-frontend-bug
+category: frontend
+owner_agent: frontend
+inputs:
+  - bug_report
+  - failing_puppeteer_test
+outputs:
+  - patch
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: fix-frontend-bug
+
+## Task
+
+Minimum-diff fix for a UI bug. The failing Puppeteer test must exist
+before the fix (planner ensures via `generate-regression-test`).
+
+## Stop condition
+
+`failing_puppeteer_test` passes; all previously-green tests remain green.

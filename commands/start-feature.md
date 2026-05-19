@@ -18,7 +18,9 @@ Runs the full lifecycle:
 6. `architect` → `design-data-model`
 7. `planner` → `decompose-task` (+ `sequence-dependencies`)
 8. For each step in the plan:
-   - `coder` → coding skill
+   - `frontend` or `backend` → tier-appropriate implementation skill
+   - `designer` → `detect-ai-slop-patterns` + `audit-typography-scale` +
+     other design checks (UI steps only)
    - `tester` → matching testing skill
    - `tester` → `run-tests`
    - `reviewer` → `code-review`

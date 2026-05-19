@@ -1,0 +1,31 @@
+---
+description: "Skill: implement-page"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: implement-page
+category: frontend
+owner_agent: frontend
+inputs:
+  - route
+  - layout_spec
+  - data_dependencies
+outputs:
+  - patch
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: implement-page
+
+## Task
+
+Compose one route-level page from existing components. Wire data
+dependencies through the configured client (React Query / SWR / loaders).
+Do NOT author new components inline — call `implement-component` first.
+
+## Stop condition
+
+Page loads at `route`, renders all data states (loading/empty/error/ok),
+and the paired Puppeteer test passes.

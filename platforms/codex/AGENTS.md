@@ -54,39 +54,38 @@ running through the Codex CLI in this repository.
     - Do not pick libraries you cannot name a current stable version for —
       drop confidence instead.
 
-### Agent: coder
+### Agent: backend
 
     
-    # Coder Agent
+    # Backend Agent
     
     ## Mission
     
-    Execute coding skills exactly as the plan dictates. Do not refactor outside
-    the scope of the current step. Do not invent new files. If the plan is
-    wrong, STOP and escalate — do not silently improvise.
+    Implement the server tier exactly as the plan dictates. You touch HTTP
+    endpoints, services, data models, migrations, and integrations. You do NOT
+    touch the UI tier — that's the frontend agent.
     
     ## Inputs
     
-    - A single plan step of `category: coding`.
+    - A single plan step of `category: backend`.
     
     ## Outputs
     
     ```json
     {
-      "patch": "unified diff or set of edits",
+      "patch": "diff or set of edits",
       "touched_paths": ["..."],
-      "rationale": "why these edits implement the step",
+      "rationale": "why this implements the step",
       "confidence": 0.0
     }
     ```
     
     ## Constraints
     
-    - One step = one outcome. Don't bundle unrelated changes.
-    - Don't add libraries that weren't in the architecture doc.
-    - Don't write comments unless the WHY is non-obvious.
-    - If you must touch a sensitive surface, set `human_gate: true` in the patch
-      metadata and stop.
+    - Only touch server-side files. Reject the step if it requires UI work.
+    - Migrations are human-gated — set `human_gate: true` and stop.
+    - Always hand off to `tester` for a paired unit/integration test.
+    - Always hand off to `security` for any auth/authz/data-handling change.
 
 ### Agent: deployer
 
@@ -116,6 +115,55 @@ running through the Codex CLI in this repository.
     - Production deploys are ALWAYS human-gated.
     - Always record a `rollback_ref` (previous release id) before promoting.
     - Never deploy if the security agent's last verdict was `block`.
+
+### Agent: designer
+
+    
+    # Designer Agent
+    
+    ## Mission
+    
+    Apply design taste to UI work. You produce design judgments — colour,
+    typography, spacing, motion, interaction states, copy — that the
+    `frontend` agent then implements. You do NOT write component code yourself.
+    
+    ## Source material
+    
+    Each skill encodes one principle from two reference bodies of work:
+    
+    - [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) — explicit
+      dials (variance / motion / density), anti-AI-purple bans, banned fonts,
+      required interaction states, motion physics.
+    - [pbakaus/impeccable](https://github.com/pbakaus/impeccable) — context-first
+      design (PRODUCT.md / DESIGN.md / STYLE.md), OKLCH colour, restrained→drenched
+      colour strategy, intentional spacing rhythm, anti-slop vocabulary, editorial
+      copy rules.
+    
+    ## Inputs
+    
+    - A frontend artifact (component / page / mockup path) or a design brief.
+    - Optional `DESIGN.md`, `STYLE.md`, `PRODUCT.md` if present in the project.
+    
+    ## Outputs
+    
+    ```json
+    {
+      "findings": [
+        {"area": "colour|type|space|motion|state|copy|anti-slop",
+         "severity": "info|warn|error", "path": "...", "msg": "...", "fix": "..."}
+      ],
+      "verdict": "pass|revise",
+      "confidence": 0.0
+    }
+    ```
+    
+    ## Constraints
+    
+    - Never write component code — emit findings only; frontend applies them.
+    - Always check for `DESIGN.md` / `STYLE.md` / `PRODUCT.md` first and load
+      context before judging.
+    - Per-skill judgments are deterministic checklists, not vibes — see the
+      individual SKILL.md files.
 
 ### Agent: devops
 
@@ -166,6 +214,135 @@ running through the Codex CLI in this repository.
       "confidence": 0.0
     }
     ```
+
+### Agent: frontend
+
+    
+    # Frontend Agent
+    
+    ## Mission
+    
+    Implement the UI tier exactly as the plan dictates. You touch components,
+    pages, client-side state, styling, and API client integration. You do NOT
+    touch the server tier — that's the backend agent.
+    
+    ## Inputs
+    
+    - A single plan step of `category: frontend`.
+    
+    ## Outputs
+    
+    ```json
+    {
+      "patch": "diff or set of edits",
+      "touched_paths": ["..."],
+      "rationale": "why this implements the step",
+      "confidence": 0.0
+    }
+    ```
+    
+    ## Constraints
+    
+    - Only touch files in the UI tier (components, pages, styles, client state,
+      API clients). Reject the step if it requires server work.
+    - Use the framework already in `package.json` — don't introduce a second one.
+    - Defer all visual/UX taste judgments to the `designer` agent.
+    - Always hand off to `tester` for a paired Puppeteer test.
+
+### Agent: infra-confidence
+
+    
+    # Infra Confidence Agent
+    
+    ## Mission
+    
+    Deterministic. Given `confidence` and `touched_paths`, decide whether to
+    proceed or escalate to a human. Encodes the 0.90 floor and the
+    sensitive-surface globs.
+    
+    ## Implementation
+    
+    Python module: `orchestrator/infra/confidence.py`.
+
+### Agent: infra-logger
+
+    
+    # Infra Logger Agent
+    
+    ## Mission
+    
+    Deterministic. Writes audit records to `logs/audit/<date>.jsonl` and
+    plans to `logs/plans/<uuid>.json`. Hash-stamps inputs/outputs.
+    
+    ## Implementation
+    
+    Python module: `orchestrator/infra/logger.py`.
+
+### Agent: infra-planner
+
+    
+    # Infra Planner Agent
+    
+    ## Mission
+    
+    Deterministic plan validation. Builds the canonical plan envelope,
+    enforces the coding↔testing pairing invariant, and topologically orders
+    steps. **Not** the same as the `planner` agent — that one decomposes
+    goals into step content; this one validates the resulting shape.
+    
+    ## Implementation
+    
+    Python module: `orchestrator/infra/planner.py`.
+
+### Agent: infra-registry
+
+    
+    # Infra Registry Agent
+    
+    ## Mission
+    
+    Deterministic. Loads `agents/*.md` and `skills/**/SKILL.md` and exposes
+    lookups: skill → owner agent, agent list, skill list.
+    
+    ## Implementation
+    
+    Python module: `orchestrator/infra/registry.py`.
+
+### Agent: infra-router
+
+    
+    # Infra Router Agent
+    
+    ## Mission
+    
+    Deterministic. Given one plan step, look up the owner agent in the
+    registry, refuse if mismatched, then call the LLM adapter (or the infra
+    agent itself, if the step targets infra). Returns the raw response;
+    confidence gating happens in `infra-confidence`, logging in `infra-logger`.
+    
+    ## Implementation
+    
+    Python module: `orchestrator/infra/router.py`. Implements `handle(skill,
+    inputs)` for `route-step`.
+    
+    ## Why an agent?
+    
+    So the orchestrator becomes a thin coordinator that invokes named
+    capabilities by id, not a god-object owning routing + gating + logging.
+
+### Agent: infra-stack-detector
+
+    
+    # Infra Stack Detector Agent
+    
+    ## Mission
+    
+    Deterministic. Returns the set of stack signals (`node`, `python`, `go`,
+    `rust`, `docker`, `terraform`, ...) present in the working directory.
+    
+    ## Implementation
+    
+    Python module: `orchestrator/infra/stack_detector.py`.
 
 ### Agent: planner
 
@@ -344,20 +521,70 @@ running through the Codex CLI in this repository.
 
 ## Skills
 
-### Skill: fix-bug
+### Skill: design-data-model
 
     
-    # Skill: fix-bug
+    # Skill: design-data-model
     
     ## Task
     
-    Make `failing_test` pass with the minimum diff. Do NOT add unrelated tests
-    or refactors. The failing test must exist BEFORE the fix — the planner
-    ensures this by emitting a `generate-regression-test` step first.
+    Produce entities + relations as a Mermaid `erDiagram`. One entity per
+    business concept. Note PKs and FKs. No storage-specific syntax.
+
+### Skill: generate-architecture-diagram
+
+    
+    # Skill: generate-architecture-diagram
+    
+    ## Task
+    
+    Emit a Mermaid `flowchart` describing components and their dependencies.
+    No prose, just the Mermaid block.
+
+### Skill: select-tech-stack
+
+    
+    # Skill: select-tech-stack
+    
+    ## Task
+    
+    Pick (or confirm) language, framework, datastore, and key libraries.
+    
+    ## Procedure
+    
+    1. If `detected_stack` is non-empty, default to it. Only deviate with
+       a recorded justification per change.
+    2. Map each requirement to the stack components that satisfy it.
+    3. Output exactly one stack — no "options to consider".
+
+### Skill: fix-backend-bug
+
+    
+    # Skill: fix-backend-bug
+    
+    ## Task
+    
+    Minimum-diff fix for a server-tier bug. The failing test must exist
+    before the fix (planner ensures via `generate-regression-test`).
     
     ## Stop condition
     
     `failing_test` passes; all previously-green tests remain green.
+
+### Skill: implement-data-model
+
+    
+    # Skill: implement-data-model
+    
+    ## Task
+    
+    Define one persistence model (ORM entity, schema, struct). No queries,
+    no migrations — those are separate skills.
+    
+    ## Stop condition
+    
+    Model loads with the ORM/driver and validates against its declared
+    schema in the paired unit test.
 
 ### Skill: implement-endpoint
 
@@ -366,59 +593,73 @@ running through the Codex CLI in this repository.
     
     ## Task
     
-    Add one HTTP endpoint matching the schemas. Wire it into the router using
-    the framework's idiomatic mechanism. Validate the request, return the
-    response, and reject malformed input.
+    Add one HTTP endpoint matching the schemas. Validate the request, return
+    the response, reject malformed input. Wire via the framework's idiomatic
+    router. No business logic inline — call into `implement-service`.
     
     ## Stop condition
     
-    Endpoint is reachable from the framework's test client and returns the
-    expected status codes for the schema cases.
+    Endpoint reachable from the framework test client; paired integration
+    test asserts every status code in the schema.
 
-### Skill: implement-function
+### Skill: implement-migration
 
     
-    # Skill: implement-function
+    # Skill: implement-migration
     
     ## Task
     
-    Write one function/method exactly per `function_spec`. No surrounding
-    refactors, no extra helpers unless the spec requires them.
+    Author one forward + reverse migration via the project's migration tool
+    (Alembic, Flyway, Prisma Migrate, ActiveRecord, etc.). Always human-gated.
     
     ## Stop condition
     
-    Function exists, has the named signature, and the paired unit test passes.
+    `up` then `down` round-trips cleanly against a throwaway database.
 
-### Skill: refactor-code
+### Skill: implement-service
 
     
-    # Skill: refactor-code
+    # Skill: implement-service
     
     ## Task
     
-    Behaviour-preserving change limited to `target_paths`. The paired test
-    suite must remain green with no edits to test files.
+    Write one service class/module containing business logic for `service_name`.
+    No HTTP, no SQL — depend on injected repositories/clients.
+    
+    ## Stop condition
+    
+    Each method has a passing unit test that mocks its dependencies.
+
+### Skill: refactor-backend
+
+    
+    # Skill: refactor-backend
+    
+    ## Task
+    
+    Behaviour-preserving change limited to server-tier paths. Public API
+    surface (HTTP routes + request/response schemas) must not change.
     
     ## Do NOT
     
-    - Change public APIs.
-    - Introduce new dependencies.
-    - Touch files outside `target_paths`.
+    - Change endpoint URLs, methods, or schemas.
+    - Touch UI-tier files.
+    - Add libraries.
 
-### Skill: scaffold-project
+### Skill: scaffold-backend
 
     
-    # Skill: scaffold-project
+    # Skill: scaffold-backend
     
     ## Task
     
-    Create the minimal directory + config layout for the chosen tech stack.
-    Use the stack's native init tool (`npm init`, `cargo init`, `poetry new`,
-    `go mod init`, etc.) — do not hand-write boilerplate.
+    Create the minimal server-tier layout using the framework's official
+    init tool (`fastapi`, `nest new`, `rails new`, `cargo new`, `go mod init`,
+    etc.). Do not hand-author boilerplate.
     
     ## Stop condition
     
-    Project runs an empty build/test successfully.
+    `<framework> run` starts a healthcheck endpoint successfully.
 
 ### Skill: build-artifact
 
@@ -470,41 +711,173 @@ running through the Codex CLI in this repository.
     Apply a database migration in `environment`. ALWAYS human-gated. ALWAYS
     record the previous revision for rollback.
 
-### Skill: design-data-model
+### Skill: audit-typography-scale
 
     
-    # Skill: design-data-model
+    # Skill: audit-typography-scale
     
     ## Task
     
-    Produce entities + relations as a Mermaid `erDiagram`. One entity per
-    business concept. Note PKs and FKs. No storage-specific syntax.
+    Audit type for measure, scale ratio, and font choice.
+    
+    ## Checklist
+    
+    1. Body copy measure between 65–75ch. Flag any block outside.
+    2. Type scale ratio ≥ 1.25 (perfect fourth or larger). Flag flat scales.
+    3. Banned families: Inter. Prefer Geist / Outfit / Cabinet Grotesk /
+       Satoshi (taste-skill).
+    4. At most 2 families total (one display, one body).
+    5. Line-height ≥ 1.5 for body, ≤ 1.2 for display.
+    
+    ## Stop condition
+    
+    Findings list every violation with `path`, `line`, and a `fix` field.
 
-### Skill: generate-architecture-diagram
+### Skill: critique-ui-copy
 
     
-    # Skill: generate-architecture-diagram
+    # Skill: critique-ui-copy
     
     ## Task
     
-    Emit a Mermaid `flowchart` describing components and their dependencies.
-    No prose, just the Mermaid block.
+    Apply STYLE.md / impeccable editorial rules to user-facing strings.
+    
+    ## Checklist
+    
+    1. Open strong — the first sentence states a stance, not a setup.
+    2. Verbs-first action labels. Banned: "Click here", "Submit", "Learn more".
+    3. Banned hollow adjectives: "seamless", "robust", "elevate",
+       "best-in-class", "powerful", "leverages", "delightful".
+    4. No em-dashes in product copy (taste convention).
+    5. Sentence case for buttons; Title Case only for proper nouns.
+    6. Error messages name the cause and the recovery, not the rule violated.
+    
+    ## Stop condition
+    
+    Findings list every offending string with its `path`, `line`, and a
+    concrete rewrite.
 
-### Skill: select-tech-stack
+### Skill: detect-ai-slop-patterns
 
     
-    # Skill: select-tech-stack
+    # Skill: detect-ai-slop-patterns
     
     ## Task
     
-    Pick (or confirm) language, framework, datastore, and key libraries.
+    Run the deterministic anti-pattern list across the UI. Each hit is an
+    `error` finding.
     
-    ## Procedure
+    ## Banned patterns (impeccable + taste-skill)
     
-    1. If `detected_stack` is non-empty, default to it. Only deviate with
-       a recorded justification per change.
-    2. Map each requirement to the stack components that satisfy it.
-    3. Output exactly one stack — no "options to consider".
+    1. AI Purple / Blue dominance — accent in the 250–290° hue range.
+    2. Gradient text on headings.
+    3. Default glassmorphism (`backdrop-filter: blur(...)` without context).
+    4. Side-stripe coloured borders on cards.
+    5. Hero metric templates (4-up big-number row).
+    6. Identical card grids with uniform shadows.
+    7. Centered heroes when `DESIGN_VARIANCE > 4`.
+    8. Use of emojis as decorative UI.
+    9. Inter as primary font.
+    10. Modal-first interaction patterns where inline editing would suffice.
+    
+    ## Stop condition
+    
+    Findings include the rule id (1–10) so the frontend agent's fix is
+    unambiguous.
+
+### Skill: enforce-interaction-states
+
+    
+    # Skill: enforce-interaction-states
+    
+    ## Task
+    
+    Every interactive surface must ship four states. Flag any missing.
+    
+    ## Required states
+    
+    1. **Loading** — skeleton, spinner, or progress.
+    2. **Empty** — meaningful empty state with a next action, never blank.
+    3. **Error** — user-readable message + a retry/recover affordance.
+    4. **Tactile feedback** — `:hover`, `:focus-visible`, `:active`
+       distinguishable styles + pressed-state animation for buttons.
+    
+    ## Stop condition
+    
+    Findings name the missing state and the file/line of the affected
+    component.
+
+### Skill: evaluate-spacing-rhythm
+
+    
+    # Skill: evaluate-spacing-rhythm
+    
+    ## Task
+    
+    Flag UI regions that use uniform / default spacing. Enforce intentional
+    variance (impeccable principle: spacing rhythm is a design decision, not
+    a default).
+    
+    ## Checklist
+    
+    1. Inspect padding/margin tokens across siblings.
+    2. Flag any group where every direct child uses the same vertical gap.
+    3. Flag any layout where vertical and horizontal gaps share one value.
+    4. Flag any "card grid" with identical card dimensions and gaps.
+    
+    ## Stop condition
+    
+    Every flagged region has a concrete `fix` suggestion (e.g. "increase top
+    gap of `<section>` to 3× others to create a hero rhythm").
+
+### Skill: pick-color-palette-oklch
+
+    
+    # Skill: pick-color-palette-oklch
+    
+    ## Task
+    
+    Emit one palette in OKLCH coordinates, given `brand_context` and one
+    `colour_strategy` on the Restrained → Drenched scale (impeccable).
+    
+    ## Rules (encoded from source skills)
+    
+    1. Use OKLCH only. No hex/RGB/HSL in the palette output.
+    2. Never pure `#000000` or `#ffffff`. Always offset L by at least 5%.
+    3. **One** accent maximum. Saturation < 80% (taste-skill anti-AI-purple).
+    4. Provide 9 stops (50, 100, 200, … 900) per declared role
+       (`bg`, `fg`, `accent`, `muted`, `border`).
+    5. State the chosen strategy explicitly in the output.
+    
+    ## Stop condition
+    
+    Output is a JSON object `{strategy, roles: {bg: [...], fg: [...], ...}}`
+    where every value matches `oklch(L%  C  H)`.
+
+### Skill: tune-motion-physics
+
+    
+    # Skill: tune-motion-physics
+    
+    ## Task
+    
+    Audit animations against the taste-skill motion budget.
+    
+    ## Checklist
+    
+    1. Animate only `transform` and `opacity`. Flag any animation of `width`,
+       `height`, `top`, `left`, `margin`, etc. (causes layout thrash).
+    2. Spring physics defaults: `stiffness: 100, damping: 20`. Flag custom
+       values without justification.
+    3. Durations between 150ms and 400ms for UI transitions.
+    4. No infinite loops outside loading indicators.
+    5. Respect `prefers-reduced-motion` — every animation must have a
+       reduced-motion fallback.
+    
+    ## Stop condition
+    
+    Each violation includes a concrete `fix` (e.g. "replace `height: auto`
+    animation with `transform: scaleY` + `transform-origin: top`").
 
 ### Skill: changelog-entry
 
@@ -536,6 +909,192 @@ running through the Codex CLI in this repository.
     If the patch changes any documented surface (CLI, public API, env vars,
     config keys), update README accordingly. If nothing documented changed,
     emit `doc_changes: []` and exit.
+
+### Skill: fix-frontend-bug
+
+    
+    # Skill: fix-frontend-bug
+    
+    ## Task
+    
+    Minimum-diff fix for a UI bug. The failing Puppeteer test must exist
+    before the fix (planner ensures via `generate-regression-test`).
+    
+    ## Stop condition
+    
+    `failing_puppeteer_test` passes; all previously-green tests remain green.
+
+### Skill: implement-component
+
+    
+    # Skill: implement-component
+    
+    ## Task
+    
+    Author one reusable UI component with the named props. No business logic,
+    no data fetching — pure presentation + local interaction.
+    
+    ## Stop condition
+    
+    Component renders in isolation (Storybook/test harness) for each prop
+    shape in the paired unit test.
+
+### Skill: implement-page
+
+    
+    # Skill: implement-page
+    
+    ## Task
+    
+    Compose one route-level page from existing components. Wire data
+    dependencies through the configured client (React Query / SWR / loaders).
+    Do NOT author new components inline — call `implement-component` first.
+    
+    ## Stop condition
+    
+    Page loads at `route`, renders all data states (loading/empty/error/ok),
+    and the paired Puppeteer test passes.
+
+### Skill: integrate-api-client
+
+    
+    # Skill: integrate-api-client
+    
+    ## Task
+    
+    Add one typed client function calling one backend endpoint. Use the
+    project's existing HTTP client. Handle non-2xx as typed errors.
+    
+    ## Stop condition
+    
+    Client function compiles with strict types; paired unit test mocks the
+    endpoint and asserts request/response shapes.
+
+### Skill: refactor-frontend
+
+    
+    # Skill: refactor-frontend
+    
+    ## Task
+    
+    Behaviour-preserving change limited to UI-tier paths. Visual output must
+    be identical (Puppeteer screenshot diff <1%).
+    
+    ## Do NOT
+    
+    - Change public component APIs.
+    - Touch server-side files.
+    - Add libraries.
+
+### Skill: scaffold-frontend
+
+    
+    # Skill: scaffold-frontend
+    
+    ## Task
+    
+    Create the minimal UI-tier layout using the framework's official CLI
+    (`create-vite`, `create-next-app`, `ng new`, `flutter create`, etc.).
+    Do not hand-author boilerplate.
+    
+    ## Stop condition
+    
+    `<framework> dev` starts a blank page successfully.
+
+### Skill: build-plan
+
+    
+    # Skill: build-plan
+    
+    Wrap `steps` in the canonical plan envelope, run `enforce-test-pairing`,
+    then persist via `infra-logger.save-plan`.
+
+### Skill: detect-stack
+
+    
+    # Skill: detect-stack
+    
+    Return the list of detected tech-stack signals at `root` (defaults to
+    cwd). See `orchestrator/infra/stack_detector.py:SIGNALS`.
+
+### Skill: enforce-test-pairing
+
+    
+    # Skill: enforce-test-pairing
+    
+    Raise `PlanInvariantError` if any `frontend`/`backend` step lacks a paired
+    `testing/*` step in `test_pair`.
+
+### Skill: evaluate-confidence
+
+    
+    # Skill: evaluate-confidence
+    
+    Return `{allowed, reason, needs_human}` given the agent's confidence
+    score and the set of touched paths.
+    
+    Floor: 0.90. Sensitive globs: see `agents/infra-confidence.md`.
+
+### Skill: list-agents
+
+    
+    # Skill: list-agents
+    
+    Return `[{id, role, kind}]` for every registered agent.
+
+### Skill: list-skills
+
+    
+    # Skill: list-skills
+    
+    Return `[{id, category, owner_agent}]` for every registered skill.
+
+### Skill: load-plan
+
+    
+    # Skill: load-plan
+    
+    Read a plan from `logs/plans/<plan_id>.json`.
+
+### Skill: log-step
+
+    
+    # Skill: log-step
+    
+    Append one record to `logs/audit/<date>.jsonl`. Hashes `inputs` and
+    `outputs` to SHA-256 before writing.
+
+### Skill: lookup-owner
+
+    
+    # Skill: lookup-owner
+    
+    Return the `owner_agent` for a skill id, or `null` if unknown.
+
+### Skill: route-step
+
+    
+    # Skill: route-step
+    
+    Dispatch one plan step to its owner agent and return the raw response.
+    
+    Pre-checks: skill exists in registry; `step.agent` matches the skill's
+    owner. Otherwise raises.
+
+### Skill: save-plan
+
+    
+    # Skill: save-plan
+    
+    Persist a plan dict to `logs/plans/<plan_id>.json`.
+
+### Skill: topological-order
+
+    
+    # Skill: topological-order
+    
+    Topologically order `steps` by `depends_on`. Raise `PlanInvariantError`
+    on cycle.
 
 ### Skill: decompose-task
 
@@ -774,6 +1333,26 @@ running through the Codex CLI in this repository.
 
 ## Commands
 
+### Command: /design-review
+
+    
+    # /design-review
+    
+    **Usage:** `/design-review <path-or-route>`
+    
+    Runs the full designer checklist:
+    
+    1. `designer` → `evaluate-spacing-rhythm`
+    2. `designer` → `pick-color-palette-oklch` (if no palette declared yet)
+    3. `designer` → `audit-typography-scale`
+    4. `designer` → `detect-ai-slop-patterns`
+    5. `designer` → `tune-motion-physics`
+    6. `designer` → `enforce-interaction-states`
+    7. `designer` → `critique-ui-copy`
+    
+    Emits a consolidated `findings[]` list. `frontend` agent applies the
+    fixes in a follow-up plan.
+
 ### Command: /plan
 
     
@@ -807,7 +1386,8 @@ running through the Codex CLI in this repository.
     
     1. `planner` → `decompose-task` (emits at least these steps)
     2. `tester` → `generate-regression-test` (must fail)
-    3. `coder` → `fix-bug`
+    3. `frontend` → `fix-frontend-bug` OR `backend` → `fix-backend-bug`
+       (router picks based on `touched_paths`)
     4. `tester` → `run-tests` (regression now passes; everything else green)
     5. `reviewer` → `code-review`
     6. `security` → `security-scan`
@@ -830,7 +1410,9 @@ running through the Codex CLI in this repository.
     6. `architect` → `design-data-model`
     7. `planner` → `decompose-task` (+ `sequence-dependencies`)
     8. For each step in the plan:
-       - `coder` → coding skill
+       - `frontend` or `backend` → tier-appropriate implementation skill
+       - `designer` → `detect-ai-slop-patterns` + `audit-typography-scale` +
+         other design checks (UI steps only)
        - `tester` → matching testing skill
        - `tester` → `run-tests`
        - `reviewer` → `code-review`

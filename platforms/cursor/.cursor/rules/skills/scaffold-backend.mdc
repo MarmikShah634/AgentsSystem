@@ -1,0 +1,29 @@
+---
+description: "Skill: scaffold-backend"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: scaffold-backend
+category: backend
+owner_agent: backend
+inputs:
+  - framework
+  - target_dir
+outputs:
+  - created_paths
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: scaffold-backend
+
+## Task
+
+Create the minimal server-tier layout using the framework's official
+init tool (`fastapi`, `nest new`, `rails new`, `cargo new`, `go mod init`,
+etc.). Do not hand-author boilerplate.
+
+## Stop condition
+
+`<framework> run` starts a healthcheck endpoint successfully.

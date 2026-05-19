@@ -1,0 +1,41 @@
+---
+description: "Skill: detect-ai-slop-patterns"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: detect-ai-slop-patterns
+category: design
+owner_agent: designer
+inputs:
+  - target_path
+outputs:
+  - findings
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: detect-ai-slop-patterns
+
+## Task
+
+Run the deterministic anti-pattern list across the UI. Each hit is an
+`error` finding.
+
+## Banned patterns (impeccable + taste-skill)
+
+1. AI Purple / Blue dominance — accent in the 250–290° hue range.
+2. Gradient text on headings.
+3. Default glassmorphism (`backdrop-filter: blur(...)` without context).
+4. Side-stripe coloured borders on cards.
+5. Hero metric templates (4-up big-number row).
+6. Identical card grids with uniform shadows.
+7. Centered heroes when `DESIGN_VARIANCE > 4`.
+8. Use of emojis as decorative UI.
+9. Inter as primary font.
+10. Modal-first interaction patterns where inline editing would suffice.
+
+## Stop condition
+
+Findings include the rule id (1–10) so the frontend agent's fix is
+unambiguous.

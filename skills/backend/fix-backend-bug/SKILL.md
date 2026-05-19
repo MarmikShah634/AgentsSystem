@@ -1,0 +1,23 @@
+---
+id: fix-backend-bug
+category: backend
+owner_agent: backend
+inputs:
+  - bug_report
+  - failing_test
+outputs:
+  - patch
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: fix-backend-bug
+
+## Task
+
+Minimum-diff fix for a server-tier bug. The failing test must exist
+before the fix (planner ensures via `generate-regression-test`).
+
+## Stop condition
+
+`failing_test` passes; all previously-green tests remain green.

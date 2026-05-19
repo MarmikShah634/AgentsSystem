@@ -1,0 +1,26 @@
+---
+id: infra-planner
+kind: infra
+role: "Plan invariant enforcer + topological order"
+owns:
+  - skills/infra/build-plan
+  - skills/infra/enforce-test-pairing
+  - skills/infra/topological-order
+hands_off_to:
+  - infra-logger
+confidence_floor: 1.0
+sensitive_surfaces: []
+---
+
+# Infra Planner Agent
+
+## Mission
+
+Deterministic plan validation. Builds the canonical plan envelope,
+enforces the coding↔testing pairing invariant, and topologically orders
+steps. **Not** the same as the `planner` agent — that one decomposes
+goals into step content; this one validates the resulting shape.
+
+## Implementation
+
+Python module: `orchestrator/infra/planner.py`.

@@ -1,0 +1,3 @@
+id: infra-registry
+source: ../../agents/infra-registry.md
+kind: agent

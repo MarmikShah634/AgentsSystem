@@ -1,0 +1,15 @@
+---
+id: save-plan
+category: infra
+owner_agent: infra-logger
+inputs:
+  - plan
+outputs:
+  - path
+requires_plan: false
+emits_confidence: false
+---
+
+# Skill: save-plan
+
+Persist a plan dict to `logs/plans/<plan_id>.json`.

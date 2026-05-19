@@ -5,7 +5,7 @@ globs: ["**/*"]
 ---
 ---
 id: select-tech-stack
-category: design
+category: architecture
 owner_agent: architect
 inputs:
   - requirements

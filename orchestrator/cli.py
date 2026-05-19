@@ -1,11 +1,11 @@
-"""CLI entry point. Wraps the orchestrator with a tiny argparse interface.
+"""CLI entry point.
 
 Usage:
-  python3 orchestrator/cli.py init
-  python3 orchestrator/cli.py detect
-  python3 orchestrator/cli.py list-agents
-  python3 orchestrator/cli.py list-skills
-  python3 orchestrator/cli.py validate
+  python3 -m orchestrator.cli init
+  python3 -m orchestrator.cli detect
+  python3 -m orchestrator.cli list-agents
+  python3 -m orchestrator.cli list-skills
+  python3 -m orchestrator.cli validate
 """
 
 from __future__ import annotations
@@ -15,8 +15,11 @@ import json
 import sys
 from pathlib import Path
 
-from .core.registry import Registry
-from .core.stack_detect import detect
+from .core.orchestrator import Orchestrator
+
+
+def _orc() -> Orchestrator:
+    return Orchestrator(llm_adapter=lambda *_: {"outputs": {}, "confidence": 1.0})
 
 
 def cmd_init(_args) -> int:
@@ -28,38 +31,42 @@ def cmd_init(_args) -> int:
 
 
 def cmd_detect(_args) -> int:
-    print(json.dumps({"stacks": detect(Path.cwd())}, indent=2))
+    res = _orc().invoke("infra-stack-detector", "detect-stack",
+                        {"root": str(Path.cwd())})
+    print(json.dumps(res, indent=2))
     return 0
 
 
 def cmd_list_agents(_args) -> int:
-    reg = Registry().load()
-    for aid, agent in sorted(reg.agents.items()):
-        print(f"{aid:<14} {agent.meta.get('role', '')}")
+    res = _orc().invoke("infra-registry", "list-agents", {})
+    for a in sorted(res["agents"], key=lambda a: a["id"]):
+        print(f"{a['id']:<22} [{a['kind']}] {a['role']}")
     return 0
 
 
 def cmd_list_skills(_args) -> int:
-    reg = Registry().load()
-    for sid, skill in sorted(reg.skills.items()):
-        print(f"{sid:<36} owner={skill.meta.get('owner_agent', '?')}")
+    res = _orc().invoke("infra-registry", "list-skills", {})
+    for s in sorted(res["skills"], key=lambda s: s["id"]):
+        print(f"{s['id']:<32} owner={s['owner_agent']:<22} "
+              f"category={s['category']}")
     return 0
 
 
 def cmd_validate(_args) -> int:
-    reg = Registry().load()
+    orc = _orc()
+    agents = {a["id"] for a in orc.invoke("infra-registry", "list-agents", {})["agents"]}
+    skills = orc.invoke("infra-registry", "list-skills", {})["skills"]
     problems: list[str] = []
-    for sid, skill in reg.skills.items():
-        owner = skill.meta.get("owner_agent")
-        if not owner:
-            problems.append(f"skill '{sid}' has no owner_agent")
-        elif owner not in reg.agents:
-            problems.append(f"skill '{sid}' owner '{owner}' is unknown")
+    for s in skills:
+        if not s["owner_agent"]:
+            problems.append(f"skill '{s['id']}' has no owner_agent")
+        elif s["owner_agent"] not in agents:
+            problems.append(f"skill '{s['id']}' owner '{s['owner_agent']}' unknown")
     if problems:
         for p in problems:
             print(f"FAIL: {p}", file=sys.stderr)
         return 1
-    print(f"OK: {len(reg.agents)} agents, {len(reg.skills)} skills, "
+    print(f"OK: {len(agents)} agents, {len(skills)} skills, "
           f"all ownership valid")
     return 0
 

@@ -28,18 +28,27 @@
     └─────────┘   └──────────┘   └────────┘  └─────────┘
 ```
 
-### 2.1 Orchestrator
+### 2.1 Orchestrator (thin coordinator)
 
-The orchestrator is a small Python program (no heavy deps) responsible for:
+The orchestrator itself is ~60 lines of real logic. It does **not** route,
+log, gate, plan, or detect anything itself — those are owned by **infra
+agents** under `orchestrator/infra/`. The orchestrator's only job is to
+`invoke(agent_id, skill_id, inputs)` and wire the infra agents together
+in the right order.
 
-- **Planner** — turns a goal into a JSON plan (sequence of `(agent, skill,
-  inputs)` triples) using `templates/task-plan.template.md`.
-- **Router** — looks up the right agent/skill in the registry and dispatches.
-- **Confidence gate** — reads the agent's structured response, enforces the
-  ≥0.90 rule, prompts the human otherwise.
-- **Logger** — appends a JSON record to `logs/audit/<date>.jsonl` for every
-  step.
-- **Registry** — maps agent IDs and skill IDs to their source files.
+| Infra agent | Skills it owns | Python body |
+|-------------|----------------|-------------|
+| `infra-router` | `route-step` | `orchestrator/infra/router.py` |
+| `infra-logger` | `log-step`, `save-plan`, `load-plan` | `orchestrator/infra/logger.py` |
+| `infra-confidence` | `evaluate-confidence` | `orchestrator/infra/confidence.py` |
+| `infra-stack-detector` | `detect-stack` | `orchestrator/infra/stack_detector.py` |
+| `infra-registry` | `lookup-owner`, `list-agents`, `list-skills` | `orchestrator/infra/registry.py` |
+| `infra-planner` | `build-plan`, `enforce-test-pairing`, `topological-order` | `orchestrator/infra/planner.py` |
+
+Each infra agent is deterministic (no LLM). The orchestrator dispatches
+to them through the same `invoke()` interface as LLM agents — only the
+`agent_id.startswith("infra-")` check decides whether to call Python
+directly vs. the LLM adapter.
 
 ### 2.2 Agents (roles)
 
@@ -68,13 +77,19 @@ Agents are **roles**, not workers. Each owns one stage of the lifecycle:
 | `requirements` | Capture and validate user stories |
 | `architect` | Tech stack + system design |
 | `planner` | Decompose goals into ordered tasks |
-| `coder` | Implement code changes |
+| `designer` | UI/UX taste, polish, anti-slop, interaction states |
+| `frontend` | Implement UI tier (components, pages, client) |
+| `backend` | Implement server tier (endpoints, services, data) |
 | `tester` | Generate + run tests (unit + Puppeteer) |
 | `reviewer` | Code review (style, correctness) |
 | `security` | Security scan, secret detection |
 | `docs` | Docs, READMEs, changelogs |
 | `devops` | Build, CI/CD, infra |
 | `deployer` | Release to environments |
+
+Plus the deterministic **infra agents** (`infra-router`, `infra-logger`,
+`infra-confidence`, `infra-stack-detector`, `infra-registry`,
+`infra-planner`) which back the orchestrator.
 
 ### 2.3 Skills (tasks)
 
@@ -203,9 +218,10 @@ schemas) are **always** human-gated regardless of confidence.
 
 ## 8. Test Pairing Invariant
 
-The planner refuses to emit a plan where any `coding/*` step lacks a paired
-`testing/*` step. The `post-edit-test.sh` hook enforces the same invariant at
-runtime: edits without a corresponding test trigger an immediate test-generation
+The `infra-planner` agent's `enforce-test-pairing` skill refuses to emit a
+plan where any `frontend/*` or `backend/*` step lacks a paired `testing/*`
+step. The `post-edit-test.sh` hook enforces the same invariant at runtime:
+edits without a corresponding test trigger an immediate test-generation
 step before the next action.
 
 ## 9. Tech Agnosticism

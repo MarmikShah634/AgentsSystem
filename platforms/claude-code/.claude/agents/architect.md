@@ -2,7 +2,7 @@
 id: architect
 role: "System architect — tech stack + high-level design"
 owns:
-  - skills/design/*
+  - skills/architecture/*
 hands_off_to:
   - planner
 confidence_floor: 0.90

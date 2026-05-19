@@ -5,7 +5,7 @@ globs: ["**/*"]
 ---
 ---
 id: generate-architecture-diagram
-category: design
+category: architecture
 owner_agent: architect
 inputs:
   - components

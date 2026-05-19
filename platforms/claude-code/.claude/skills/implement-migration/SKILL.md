@@ -1,0 +1,24 @@
+---
+id: implement-migration
+category: backend
+owner_agent: backend
+inputs:
+  - description
+  - up_sql_or_ops
+  - down_sql_or_ops
+outputs:
+  - migration_path
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: implement-migration
+
+## Task
+
+Author one forward + reverse migration via the project's migration tool
+(Alembic, Flyway, Prisma Migrate, ActiveRecord, etc.). Always human-gated.
+
+## Stop condition
+
+`up` then `down` round-trips cleanly against a throwaway database.

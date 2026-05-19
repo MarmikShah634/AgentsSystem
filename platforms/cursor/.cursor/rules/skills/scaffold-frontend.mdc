@@ -1,0 +1,29 @@
+---
+description: "Skill: scaffold-frontend"
+alwaysApply: false
+globs: ["**/*"]
+---
+---
+id: scaffold-frontend
+category: frontend
+owner_agent: frontend
+inputs:
+  - framework
+  - target_dir
+outputs:
+  - created_paths
+requires_plan: true
+emits_confidence: true
+---
+
+# Skill: scaffold-frontend
+
+## Task
+
+Create the minimal UI-tier layout using the framework's official CLI
+(`create-vite`, `create-next-app`, `ng new`, `flutter create`, etc.).
+Do not hand-author boilerplate.
+
+## Stop condition
+
+`<framework> dev` starts a blank page successfully.

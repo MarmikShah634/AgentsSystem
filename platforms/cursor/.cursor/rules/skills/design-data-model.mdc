@@ -5,7 +5,7 @@ globs: ["**/*"]
 ---
 ---
 id: design-data-model
-category: design
+category: architecture
 owner_agent: architect
 inputs:
   - requirements
